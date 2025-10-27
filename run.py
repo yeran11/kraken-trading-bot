@@ -34,6 +34,9 @@ bot_state = {
     'paper_trading': True
 }
 
+# Trading engine instance (global)
+trading_engine = None
+
 # Routes
 @app.route('/')
 def home():
@@ -368,12 +371,52 @@ def get_orderbook(symbol):
 
 @app.route('/api/positions')
 def api_positions():
-    """Return empty positions"""
-    return jsonify([])
+    """Get current trading positions from the engine"""
+    global trading_engine
+
+    if not trading_engine:
+        return jsonify([])
+
+    try:
+        positions = trading_engine.get_positions()
+
+        # Convert to dashboard format
+        position_list = []
+        for symbol, pos in positions.items():
+            # Fetch current price
+            import ccxt
+            exchange = ccxt.kraken()
+            ticker = exchange.fetch_ticker(symbol)
+            current_price = ticker['last']
+
+            entry_price = pos['entry_price']
+            quantity = pos['quantity']
+
+            # Calculate P&L
+            unrealized_pnl = (current_price - entry_price) * quantity
+            pnl_percent = ((current_price - entry_price) / entry_price) * 100
+
+            position_list.append({
+                'symbol': symbol,
+                'side': 'long',
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'current_price': current_price,
+                'unrealized_pnl': unrealized_pnl,
+                'pnl_percent': pnl_percent,
+                'entry_time': pos['entry_time']
+            })
+
+        return jsonify(position_list)
+
+    except Exception as e:
+        return jsonify([])
 
 @app.route('/api/start', methods=['POST'])
 def api_start():
-    """Start the trading bot"""
+    """Start the trading bot - REAL TRADING ENGINE"""
+    global trading_engine
+
     from datetime import datetime
     from dotenv import load_dotenv
     load_dotenv()
@@ -381,28 +424,70 @@ def api_start():
     if bot_state['is_running']:
         return jsonify({'success': False, 'message': 'Bot is already running'})
 
-    # Update bot state
-    bot_state['is_running'] = True
-    bot_state['start_time'] = datetime.now()
-    bot_state['paper_trading'] = os.getenv('PAPER_TRADING', 'True').lower() in ('true', '1', 'yes')
+    # Get API credentials
+    api_key = os.getenv('KRAKEN_API_KEY', '')
+    api_secret = os.getenv('KRAKEN_API_SECRET', '')
 
-    mode = 'paper trading' if bot_state['paper_trading'] else 'LIVE TRADING'
-    return jsonify({
-        'success': True,
-        'message': f'Bot started in {mode} mode',
-        'start_time': bot_state['start_time'].isoformat()
-    })
+    if not api_key or not api_secret or 'your_' in api_key.lower():
+        return jsonify({
+            'success': False,
+            'message': 'API credentials not configured. Please add them in Settings.'
+        })
+
+    # Initialize trading engine
+    try:
+        from trading_engine import TradingEngine
+
+        trading_engine = TradingEngine(api_key, api_secret)
+        trading_engine.start()
+
+        # Update bot state
+        bot_state['is_running'] = True
+        bot_state['start_time'] = datetime.now()
+        bot_state['paper_trading'] = os.getenv('PAPER_TRADING', 'True').lower() in ('true', '1', 'yes')
+
+        mode = 'PAPER TRADING' if bot_state['paper_trading'] else 'LIVE TRADING'
+
+        return jsonify({
+            'success': True,
+            'message': f'🚀 Trading engine started in {mode} mode! Monitoring markets and executing trades.',
+            'start_time': bot_state['start_time'].isoformat()
+        })
+
+    except Exception as e:
+        bot_state['is_running'] = False
+        return jsonify({
+            'success': False,
+            'message': f'Failed to start trading engine: {str(e)}'
+        })
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
-    """Stop the trading bot"""
+    """Stop the trading bot - STOPS REAL TRADING"""
+    global trading_engine
+
     if not bot_state['is_running']:
         return jsonify({'success': False, 'message': 'Bot is not running'})
 
-    bot_state['is_running'] = False
-    bot_state['start_time'] = None
+    # Stop trading engine
+    try:
+        if trading_engine:
+            trading_engine.stop()
+            trading_engine = None
 
-    return jsonify({'success': True, 'message': 'Bot stopped'})
+        bot_state['is_running'] = False
+        bot_state['start_time'] = None
+
+        return jsonify({
+            'success': True,
+            'message': '🛑 Trading engine stopped. No more trades will be executed.'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error stopping trading engine: {str(e)}'
+        })
 
 @app.route('/settings')
 def settings_page():
