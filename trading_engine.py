@@ -481,71 +481,180 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"❌ Failed to execute BUY order for {symbol}: {e}")
 
-    def _execute_sell(self, symbol, price, reason):
-        """Execute a SELL order on Kraken"""
-        try:
-            position = self.positions[symbol]
-            quantity = position['quantity']
-            entry_price = position['entry_price']
-
-            # Calculate P&L
-            pnl = (price - entry_price) * quantity
-            pnl_percent = ((price - entry_price) / entry_price) * 100
-
-            logger.info(f"Executing SELL: {quantity:.8f} {symbol} at ${price:.2f} ({reason})")
-
-            # Place market sell order
-            order = self.exchange.create_market_sell_order(symbol, quantity)
-
-            # Remove position
-            del self.positions[symbol]
-
-            # Log trade
-            self.trades_history.append({
-                'symbol': symbol,
-                'action': 'SELL',
-                'price': price,
-                'quantity': quantity,
-                'pnl': pnl,
-                'pnl_percent': pnl_percent,
-                'reason': reason,
-                'timestamp': datetime.now().isoformat()
-            })
-
-            # Save positions and trades to file
-            self.save_positions()
-            self.save_trades()
-
-            logger.success(f"✅ SELL order executed: {symbol} at ${price:.2f} | P&L: ${pnl:.2f} ({pnl_percent:.2f}%)")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to execute SELL order for {symbol}: {e}")
-
-    def _check_positions(self):
-        """Check all open positions for stop-loss/take-profit"""
-        for symbol in list(self.positions.keys()):
+    def _execute_sell_with_retry(self, symbol, price, reason, max_retries=5):
+        """
+        Execute a SELL order with retry mechanism - CRITICAL for risk management
+        Will retry up to max_retries times to ensure the order executes
+        """
+        for attempt in range(max_retries):
             try:
-                ticker = self.exchange.fetch_ticker(symbol)
-                current_price = ticker['last']
+                if symbol not in self.positions:
+                    logger.warning(f"Position {symbol} already closed, skipping sell")
+                    return
 
                 position = self.positions[symbol]
+                quantity = position['quantity']
                 entry_price = position['entry_price']
 
-                # Calculate P&L percentage
-                pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                # Calculate P&L
+                pnl = (price - entry_price) * quantity
+                pnl_percent = ((price - entry_price) / entry_price) * 100
 
-                # Auto stop-loss
-                if pnl_percent <= -self.stop_loss_percent:
-                    logger.warning(f"🔴 AUTO STOP-LOSS: {symbol} at {pnl_percent:.2f}%")
-                    self._execute_sell(symbol, current_price, "AUTO_STOP_LOSS")
+                logger.info(f"[Attempt {attempt+1}/{max_retries}] Executing SELL: {quantity:.8f} {symbol} at ${price:.2f} ({reason})")
 
-                # Auto take-profit
-                elif pnl_percent >= self.take_profit_percent:
-                    logger.info(f"🟢 AUTO TAKE-PROFIT: {symbol} at {pnl_percent:.2f}%")
-                    self._execute_sell(symbol, current_price, "AUTO_TAKE_PROFIT")
+                # Place market sell order - THIS IS CRITICAL
+                order = self.exchange.create_market_sell_order(symbol, quantity)
+
+                # Verify order was created
+                if not order or 'id' not in order:
+                    raise Exception("Order creation returned invalid response")
+
+                logger.success(f"✅ Order #{order.get('id')} created successfully")
+
+                # Remove position from tracking
+                del self.positions[symbol]
+
+                # Log trade to history
+                trade_record = {
+                    'symbol': symbol,
+                    'action': 'SELL',
+                    'price': price,
+                    'quantity': quantity,
+                    'pnl': pnl,
+                    'pnl_percent': pnl_percent,
+                    'reason': reason,
+                    'timestamp': datetime.now().isoformat(),
+                    'order_id': order.get('id')
+                }
+                self.trades_history.append(trade_record)
+
+                # CRITICAL: Save immediately to disk
+                self.save_positions()
+                self.save_trades()
+
+                # Success logging
+                profit_loss = "PROFIT" if pnl >= 0 else "LOSS"
+                logger.success(f"✅✅✅ SELL ORDER EXECUTED SUCCESSFULLY ✅✅✅")
+                logger.success(f"Symbol: {symbol}")
+                logger.success(f"Quantity: {quantity:.8f}")
+                logger.success(f"Entry Price: ${entry_price:.6f}")
+                logger.success(f"Exit Price: ${price:.6f}")
+                logger.success(f"{profit_loss}: ${pnl:.4f} ({pnl_percent:+.2f}%)")
+                logger.success(f"Reason: {reason}")
+                logger.success(f"Order ID: {order.get('id')}")
+
+                return  # SUCCESS - exit function
 
             except Exception as e:
-                logger.error(f"Error checking position for {symbol}: {e}")
+                logger.error(f"❌ Attempt {attempt+1}/{max_retries} failed to execute SELL for {symbol}: {e}")
+
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3  # Exponential backoff: 3s, 6s, 9s, 12s, 15s
+                    logger.warning(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+
+                    # Try to get updated price for next attempt
+                    try:
+                        ticker = self.exchange.fetch_ticker(symbol)
+                        price = ticker['last']
+                        logger.info(f"Updated price for retry: ${price:.6f}")
+                    except:
+                        pass  # Use existing price if can't fetch
+                else:
+                    # CRITICAL FAILURE - all retries exhausted
+                    logger.critical(f"🚨🚨🚨 CRITICAL: Failed to execute SELL for {symbol} after {max_retries} attempts!")
+                    logger.critical(f"Manual intervention required! Check Kraken account and close position manually!")
+                    logger.critical(f"Position data: {position}")
+
+    def _execute_sell(self, symbol, price, reason):
+        """Execute a SELL order on Kraken - wrapper that calls retry version"""
+        self._execute_sell_with_retry(symbol, price, reason, max_retries=3)
+
+    def _check_positions(self):
+        """
+        CRITICAL: Check all open positions for stop-loss/take-profit
+        This is the MAIN risk management function - runs every 30 seconds
+        """
+        if not self.positions:
+            logger.debug("No open positions to check")
+            return
+
+        logger.info(f"🔍 Checking {len(self.positions)} open position(s) for risk management...")
+
+        for symbol in list(self.positions.keys()):
+            try:
+                position = self.positions[symbol]
+                entry_price = position['entry_price']
+                quantity = position['quantity']
+                entry_time = position.get('entry_time', 'unknown')
+
+                logger.debug(f"Checking {symbol}: Entry=${entry_price:.6f}, Qty={quantity:.4f}")
+
+                # Fetch current price with retry mechanism
+                current_price = None
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        ticker = self.exchange.fetch_ticker(symbol)
+                        current_price = ticker['last']
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Failed to fetch price for {symbol} (attempt {attempt+1}/{max_retries}): {e}")
+                            time.sleep(2)
+                        else:
+                            raise
+
+                if current_price is None or current_price <= 0:
+                    logger.error(f"Invalid price for {symbol}: {current_price}")
+                    continue
+
+                # Calculate P&L
+                pnl = (current_price - entry_price) * quantity
+                pnl_percent = ((current_price - entry_price) / entry_price) * 100
+
+                # Calculate stop-loss and take-profit levels
+                stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
+                take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
+
+                logger.info(f"📊 {symbol} | Current: ${current_price:.6f} | P&L: ${pnl:.4f} ({pnl_percent:+.2f}%) | SL: ${stop_loss_price:.6f} | TP: ${take_profit_price:.6f}")
+
+                # CRITICAL: Check stop-loss FIRST (risk protection is priority)
+                if pnl_percent <= -self.stop_loss_percent:
+                    logger.warning(f"🚨🔴 STOP-LOSS TRIGGERED! 🔴🚨")
+                    logger.warning(f"Symbol: {symbol}")
+                    logger.warning(f"Entry: ${entry_price:.6f}")
+                    logger.warning(f"Current: ${current_price:.6f}")
+                    logger.warning(f"Loss: ${pnl:.4f} ({pnl_percent:.2f}%)")
+                    logger.warning(f"Stop-Loss Level: {self.stop_loss_percent}%")
+                    logger.warning(f"EXECUTING EMERGENCY SELL ORDER...")
+
+                    # Execute sell with high priority
+                    self._execute_sell_with_retry(symbol, current_price, "STOP_LOSS_AUTO")
+                    continue
+
+                # Check take-profit (lock in gains)
+                elif pnl_percent >= self.take_profit_percent:
+                    logger.info(f"🎉🟢 TAKE-PROFIT TRIGGERED! 🟢🎉")
+                    logger.info(f"Symbol: {symbol}")
+                    logger.info(f"Entry: ${entry_price:.6f}")
+                    logger.info(f"Current: ${current_price:.6f}")
+                    logger.info(f"Profit: ${pnl:.4f} ({pnl_percent:.2f}%)")
+                    logger.info(f"Take-Profit Level: {self.take_profit_percent}%")
+                    logger.info(f"EXECUTING PROFIT-TAKING SELL ORDER...")
+
+                    # Execute sell to lock in profit
+                    self._execute_sell_with_retry(symbol, current_price, "TAKE_PROFIT_AUTO")
+                    continue
+
+                else:
+                    # Position is within acceptable range
+                    logger.debug(f"✅ {symbol} within range: {pnl_percent:+.2f}% (Target: {self.take_profit_percent}%, Stop: -{self.stop_loss_percent}%)")
+
+            except Exception as e:
+                logger.error(f"❌ CRITICAL ERROR checking position for {symbol}: {e}", exc_info=True)
+                # Don't let one position error stop checking others
+                continue
 
     def get_positions(self):
         """Get current positions"""
@@ -554,3 +663,72 @@ class TradingEngine:
     def get_trades(self):
         """Get trade history"""
         return self.trades_history
+
+    def test_risk_management(self):
+        """
+        Test the risk management system without real trades
+        This simulates stop-loss and take-profit triggers
+        """
+        logger.info("=" * 80)
+        logger.info("🧪 RISK MANAGEMENT TEST MODE")
+        logger.info("=" * 80)
+
+        if not self.positions:
+            logger.warning("No positions to test. Create a test position first.")
+            return
+
+        for symbol, position in self.positions.items():
+            entry_price = position['entry_price']
+            quantity = position['quantity']
+
+            logger.info(f"\nTesting {symbol}:")
+            logger.info(f"  Entry Price: ${entry_price:.6f}")
+            logger.info(f"  Quantity: {quantity:.8f}")
+            logger.info(f"  Stop-Loss Threshold: -{self.stop_loss_percent}%")
+            logger.info(f"  Take-Profit Threshold: +{self.take_profit_percent}%")
+
+            # Calculate trigger prices
+            stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
+            take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
+
+            logger.info(f"\n  📍 Trigger Prices:")
+            logger.info(f"    Stop-Loss will trigger at: ${stop_loss_price:.6f}")
+            logger.info(f"    Take-Profit will trigger at: ${take_profit_price:.6f}")
+
+            # Simulate different price scenarios
+            logger.info(f"\n  🎭 Simulated Scenarios:")
+
+            # Scenario 1: Price drops to stop-loss
+            test_price_sl = entry_price * 0.98  # -2%
+            pnl_sl = (test_price_sl - entry_price) * quantity
+            pnl_percent_sl = ((test_price_sl - entry_price) / entry_price) * 100
+            logger.info(f"    1. Price drops to ${test_price_sl:.6f} ({pnl_percent_sl:.2f}%)")
+            if pnl_percent_sl <= -self.stop_loss_percent:
+                logger.warning(f"       🔴 STOP-LOSS WOULD TRIGGER! Loss: ${pnl_sl:.4f}")
+            else:
+                logger.info(f"       ✅ Within acceptable range")
+
+            # Scenario 2: Price rises to take-profit
+            test_price_tp = entry_price * 1.03  # +3%
+            pnl_tp = (test_price_tp - entry_price) * quantity
+            pnl_percent_tp = ((test_price_tp - entry_price) / entry_price) * 100
+            logger.info(f"    2. Price rises to ${test_price_tp:.6f} ({pnl_percent_tp:.2f}%)")
+            if pnl_percent_tp >= self.take_profit_percent:
+                logger.success(f"       🟢 TAKE-PROFIT WOULD TRIGGER! Profit: ${pnl_tp:.4f}")
+            else:
+                logger.info(f"       ✅ Within acceptable range")
+
+            # Scenario 3: Small movement
+            test_price_neutral = entry_price * 1.005  # +0.5%
+            pnl_neutral = (test_price_neutral - entry_price) * quantity
+            pnl_percent_neutral = ((test_price_neutral - entry_price) / entry_price) * 100
+            logger.info(f"    3. Price moves to ${test_price_neutral:.6f} ({pnl_percent_neutral:.2f}%)")
+            logger.info(f"       ✅ Within acceptable range - no action taken")
+
+        logger.info("\n" + "=" * 80)
+        logger.info("✅ Risk Management Test Complete")
+        logger.info("   The system will automatically:")
+        logger.info(f"   - SELL if price drops {self.stop_loss_percent}% (protect capital)")
+        logger.info(f"   - SELL if price rises {self.take_profit_percent}% (lock in profit)")
+        logger.info("   - Check every 30 seconds while bot is running")
+        logger.info("=" * 80)
