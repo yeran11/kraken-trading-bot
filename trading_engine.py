@@ -34,7 +34,25 @@ class TradingEngine:
         try:
             if os.path.exists('trading_pairs_config.json'):
                 with open('trading_pairs_config.json', 'r') as f:
-                    self.config = json.load(f)
+                    raw_config = json.load(f)
+
+                    # Handle both formats:
+                    # 1. New format from Settings page: {"pairs": [...]}
+                    # 2. Old flat format: {"BTC/USD": {...}, "ETH/USD": {...}}
+                    if 'pairs' in raw_config and isinstance(raw_config['pairs'], list):
+                        # Convert pairs array to flat dict
+                        self.config = {}
+                        for pair in raw_config['pairs']:
+                            symbol = pair.get('symbol')
+                            if symbol:
+                                self.config[symbol] = {
+                                    'enabled': pair.get('enabled', False),
+                                    'allocation': pair.get('allocation', 10),
+                                    'strategies': pair.get('strategies', ['momentum'])
+                                }
+                    else:
+                        # Already flat format
+                        self.config = raw_config
             else:
                 self.config = {}
 
