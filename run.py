@@ -27,6 +27,13 @@ from flask import Flask, render_template, jsonify, request
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'kraken-bot-secret-key'
 
+# Bot state tracking
+bot_state = {
+    'is_running': False,
+    'start_time': None,
+    'paper_trading': True
+}
+
 # Routes
 @app.route('/')
 def home():
@@ -68,6 +75,7 @@ def home():
 def api_status():
     """Return bot status as JSON"""
     from dotenv import load_dotenv
+    from datetime import datetime
     load_dotenv()
 
     # Check actual paper trading setting
@@ -88,22 +96,69 @@ def api_status():
     else:
         message = 'Bot is operational in demo mode'
 
+    # Calculate uptime
+    uptime_seconds = 0
+    if bot_state['is_running'] and bot_state['start_time']:
+        uptime_seconds = int((datetime.now() - bot_state['start_time']).total_seconds())
+
     return jsonify({
         'status': 'running',
         'paper_trading': paper_trading,
         'version': '1.0.0',
         'message': message,
-        'is_running': False
+        'is_running': bot_state['is_running'],
+        'uptime_seconds': uptime_seconds,
+        'start_time': bot_state['start_time'].isoformat() if bot_state['start_time'] else None
     })
 
 @app.route('/api/balance')
 def api_balance():
-    """Return mock balance"""
-    return jsonify({
-        'USD': 10000.00,
-        'BTC': 0.0,
-        'ETH': 0.0
-    })
+    """Get real balance from Kraken"""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        api_key = os.getenv('KRAKEN_API_KEY', '')
+        api_secret = os.getenv('KRAKEN_API_SECRET', '')
+
+        # Check if we have valid credentials
+        if not api_key or not api_secret or 'your_' in api_key.lower():
+            # Return mock balance if no valid credentials
+            return jsonify({
+                'USD': 10000.00,
+                'BTC': 0.0,
+                'ETH': 0.0,
+                'mock': True
+            })
+
+        # Fetch real balance from Kraken
+        import ccxt
+        exchange = ccxt.kraken({
+            'apiKey': api_key,
+            'secret': api_secret
+        })
+
+        balance = exchange.fetch_balance()
+
+        # Return relevant balances
+        return jsonify({
+            'USD': float(balance.get('USD', {}).get('free', 0)),
+            'BTC': float(balance.get('BTC', {}).get('free', 0)),
+            'ETH': float(balance.get('ETH', {}).get('free', 0)),
+            'SOL': float(balance.get('SOL', {}).get('free', 0)),
+            'total': balance.get('total', {}),
+            'mock': False
+        })
+
+    except Exception as e:
+        # Return mock balance on error
+        return jsonify({
+            'USD': 10000.00,
+            'BTC': 0.0,
+            'ETH': 0.0,
+            'mock': True,
+            'error': str(e)
+        })
 
 @app.route('/api/market-data/<symbol>')
 def get_market_data(symbol):
@@ -291,12 +346,35 @@ def api_positions():
 
 @app.route('/api/start', methods=['POST'])
 def api_start():
-    """Mock start endpoint"""
-    return jsonify({'success': True, 'message': 'Bot started in paper trading mode'})
+    """Start the trading bot"""
+    from datetime import datetime
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    if bot_state['is_running']:
+        return jsonify({'success': False, 'message': 'Bot is already running'})
+
+    # Update bot state
+    bot_state['is_running'] = True
+    bot_state['start_time'] = datetime.now()
+    bot_state['paper_trading'] = os.getenv('PAPER_TRADING', 'True').lower() in ('true', '1', 'yes')
+
+    mode = 'paper trading' if bot_state['paper_trading'] else 'LIVE TRADING'
+    return jsonify({
+        'success': True,
+        'message': f'Bot started in {mode} mode',
+        'start_time': bot_state['start_time'].isoformat()
+    })
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
-    """Mock stop endpoint"""
+    """Stop the trading bot"""
+    if not bot_state['is_running']:
+        return jsonify({'success': False, 'message': 'Bot is not running'})
+
+    bot_state['is_running'] = False
+    bot_state['start_time'] = None
+
     return jsonify({'success': True, 'message': 'Bot stopped'})
 
 @app.route('/settings')

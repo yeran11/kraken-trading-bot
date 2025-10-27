@@ -40,44 +40,32 @@ document.addEventListener('DOMContentLoaded', function() {
 // ====================
 
 function initializeWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const socketUrl = `${protocol}://${window.location.host}/socket.io/`;
+    // Use HTTP polling instead of WebSocket
+    console.log('Using HTTP polling for status updates');
 
-    socket = io(socketUrl, {
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 10
-    });
+    // Check connection status every 5 seconds
+    setInterval(async () => {
+        try {
+            const response = await fetch('/api/status');
+            if (response.ok) {
+                updateConnectionStatus(true);
+            } else {
+                updateConnectionStatus(false);
+            }
+        } catch (error) {
+            console.error('Connection check failed:', error);
+            updateConnectionStatus(false);
+        }
+    }, 5000);
 
-    // Connection events
-    socket.on('connect', () => {
-        console.log('WebSocket connected');
-        updateConnectionStatus(true);
-
-        // Subscribe to updates
-        subscribeToUpdates();
-    });
-
-    socket.on('disconnect', () => {
-        console.log('WebSocket disconnected');
-        updateConnectionStatus(false);
-    });
-
-    socket.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        showAlert('Connection error', 'danger');
-    });
-
-    // Data events
-    socket.on('status_update', handleStatusUpdate);
-    socket.on('ticker_update', handleTickerUpdate);
-    socket.on('positions_update', handlePositionsUpdate);
-    socket.on('trade_success', handleTradeSuccess);
-    socket.on('trade_error', handleTradeError);
-    socket.on('bot_started', handleBotStarted);
-    socket.on('bot_stopped', handleBotStopped);
-    socket.on('alert', handleAlert);
-    socket.on('update', handleGeneralUpdate);
+    // Initial connection check
+    fetch('/api/status')
+        .then(response => {
+            if (response.ok) {
+                updateConnectionStatus(true);
+            }
+        })
+        .catch(() => updateConnectionStatus(false));
 }
 
 function subscribeToUpdates() {
