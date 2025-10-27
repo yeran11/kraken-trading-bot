@@ -384,16 +384,41 @@ class TradingEngine:
 
             if 'momentum' in strategies:
                 if action_type == 'BUY':
-                    # Buy if short MA crosses above long MA (uptrend)
-                    if sma_5 > sma_20 and current_price > sma_5:
-                        logger.info(f"{symbol} Momentum BUY signal: Price ${current_price:.2f} > SMA5 ${sma_5:.2f} > SMA20 ${sma_20:.2f}")
+                    # Buy if short MA is SIGNIFICANTLY above long MA (strong uptrend)
+                    # Require at least 0.5% separation to avoid noise
+                    sma_diff_percent = ((sma_5 - sma_20) / sma_20) * 100
+
+                    if sma_5 > sma_20 and current_price > sma_5 and sma_diff_percent >= 0.5:
+                        logger.info(f"{symbol} Momentum BUY signal: Price ${current_price:.2f} > SMA5 ${sma_5:.2f} > SMA20 ${sma_20:.2f} (Gap: {sma_diff_percent:.2f}%)")
                         return True
+                    else:
+                        logger.debug(f"{symbol} Momentum BUY: Not strong enough. SMA5/SMA20 gap: {sma_diff_percent:.2f}% (need 0.5%+)")
 
                 elif action_type == 'SELL':
-                    # Sell if short MA crosses below long MA (downtrend)
-                    if sma_5 < sma_20:
-                        logger.info(f"{symbol} Momentum SELL signal: SMA5 ${sma_5:.2f} < SMA20 ${sma_20:.2f}")
+                    # CRITICAL FIX: Only sell if momentum has CLEARLY reversed
+                    # Require SMA5 to be at least 0.3% BELOW SMA20 (not just any amount)
+                    # This prevents immediate sell-offs from small dips
+                    sma_diff_percent = ((sma_5 - sma_20) / sma_20) * 100
+
+                    # Also check minimum hold time (at least 15 minutes)
+                    if symbol in self.positions:
+                        entry_time_str = self.positions[symbol].get('entry_time', '')
+                        if entry_time_str:
+                            from datetime import datetime
+                            entry_time = datetime.fromisoformat(entry_time_str)
+                            hold_minutes = (datetime.now() - entry_time).total_seconds() / 60
+
+                            if hold_minutes < 15:
+                                logger.debug(f"{symbol} Momentum SELL: Too soon! Hold time: {hold_minutes:.1f} min (need 15 min)")
+                                return False
+
+                    # Require CLEAR downtrend: SMA5 must be 0.3%+ below SMA20
+                    if sma_5 < sma_20 and sma_diff_percent <= -0.3:
+                        logger.info(f"{symbol} Momentum SELL signal: Clear downtrend - SMA5 ${sma_5:.2f} < SMA20 ${sma_20:.2f} (Gap: {sma_diff_percent:.2f}%)")
                         return True
+                    else:
+                        logger.debug(f"{symbol} Momentum SELL: Not confirmed. SMA5/SMA20 gap: {sma_diff_percent:.2f}% (need -0.3% or lower)")
+                        return False
 
             if 'mean_reversion' in strategies:
                 # Mean reversion: buy dips, sell peaks
@@ -415,21 +440,41 @@ class TradingEngine:
 
             if 'scalping' in strategies:
                 # Scalping: quick small profits
+                # MODIFIED: Less aggressive to avoid over-trading
                 sma_10 = sum(closes[-10:]) / 10
 
                 if action_type == 'BUY':
-                    # Buy on small dips
-                    if current_price < sma_10 * 0.995:  # 0.5% below 10-period average
-                        logger.info(f"{symbol} Scalping BUY: Price ${current_price:.2f} dipped below SMA10")
+                    # Buy on bigger dips (changed from 0.5% to 1.5%)
+                    if current_price < sma_10 * 0.985:  # 1.5% below 10-period average
+                        logger.info(f"{symbol} Scalping BUY: Price ${current_price:.2f} dipped 1.5%+ below SMA10")
                         return True
+                    else:
+                        logger.debug(f"{symbol} Scalping BUY: Dip not significant enough")
 
                 elif action_type == 'SELL':
-                    # Sell on small gains (1% profit target for scalping)
+                    # CRITICAL FIX: Increased profit target to 2% (was 1%)
+                    # 1% barely covers fees (0.32% round trip)
+                    # 2% gives actual profit margin
                     if symbol in self.positions:
                         entry = self.positions[symbol]['entry_price']
-                        if current_price > entry * 1.01:  # 1% profit
-                            logger.info(f"{symbol} Scalping SELL: 1% profit target reached")
+
+                        # Also check minimum hold time (at least 10 minutes for scalping)
+                        entry_time_str = self.positions[symbol].get('entry_time', '')
+                        if entry_time_str:
+                            from datetime import datetime
+                            entry_time = datetime.fromisoformat(entry_time_str)
+                            hold_minutes = (datetime.now() - entry_time).total_seconds() / 60
+
+                            if hold_minutes < 10:
+                                logger.debug(f"{symbol} Scalping SELL: Too soon! Hold time: {hold_minutes:.1f} min (need 10 min)")
+                                return False
+
+                        if current_price > entry * 1.02:  # 2% profit (was 1%)
+                            pnl_percent = ((current_price - entry) / entry) * 100
+                            logger.info(f"{symbol} Scalping SELL: 2% profit target reached (P&L: {pnl_percent:.2f}%)")
                             return True
+                        else:
+                            logger.debug(f"{symbol} Scalping SELL: Not at 2% profit yet")
 
         except Exception as e:
             logger.error(f"Error evaluating strategies for {symbol}: {e}")
