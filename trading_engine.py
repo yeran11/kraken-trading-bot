@@ -331,7 +331,18 @@ class TradingEngine:
         if signal:
             # EXECUTE BUY ORDER
             logger.info(f"🟢 BUY SIGNAL: {symbol} at ${current_price:.2f}")
-            self._execute_buy(symbol, investment, current_price)
+            # Determine which strategy triggered (for trailing stop logic)
+            strategy_name = 'unknown'
+            if 'macd_supertrend' in strategies:
+                strategy_name = 'macd_supertrend'
+            elif 'momentum' in strategies:
+                strategy_name = 'momentum'
+            elif 'mean_reversion' in strategies:
+                strategy_name = 'mean_reversion'
+            elif 'scalping' in strategies:
+                strategy_name = 'scalping'
+
+            self._execute_buy(symbol, investment, current_price, strategy_name)
 
     def _check_sell_signal(self, symbol, current_price, strategies):
         """Check if we should sell this position"""
@@ -377,6 +388,9 @@ class TradingEngine:
                 return False
 
             closes = [x[4] for x in ohlcv]  # closing prices
+            highs = [x[2] for x in ohlcv]   # high prices
+            lows = [x[3] for x in ohlcv]    # low prices
+            volumes = [x[5] for x in ohlcv] # volume
 
             # Simple momentum: compare current to recent average
             sma_20 = sum(closes[-20:]) / 20
@@ -512,8 +526,80 @@ class TradingEngine:
                         else:
                             logger.debug(f"{symbol} Scalping SELL: Not at 2% profit yet")
 
+            # MACD + Supertrend Trend Following Strategy
+            if 'macd_supertrend' in strategies:
+                # This strategy only generates BUY signals
+                # Risk management (stop-loss/take-profit) handles SELL
+
+                if action_type == 'BUY':
+                    # Step 1: Check minimum data requirements
+                    if len(closes) < 30:
+                        logger.debug(f"{symbol} MACD+Supertrend: Not enough data (need 30+ candles)")
+                        return False
+
+                    # Step 2: Calculate all indicators
+                    macd_line, signal_line, histogram = self._calculate_macd(closes)
+                    supertrend, trend_direction = self._calculate_supertrend(highs, lows, closes)
+                    rsi = self._calculate_rsi(closes)
+                    adx = self._calculate_adx(highs, lows, closes)
+
+                    # Check if we have valid indicator values
+                    if not all([macd_line, signal_line, supertrend, rsi, adx]):
+                        logger.debug(f"{symbol} MACD+Supertrend: Indicators not ready")
+                        return False
+
+                    # Step 3: FIRST condition - MACD must have crossed above signal recently
+                    macd_crossed = self._check_macd_crossover(symbol, macd_line, signal_line, max_age_minutes=30)
+
+                    if not macd_crossed:
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: No recent MACD crossover (MACD: {macd_line:.6f}, Signal: {signal_line:.6f})")
+                        return False
+
+                    # Step 4: SECOND condition - Price must be above Supertrend (bullish)
+                    price_above_supertrend = current_price > supertrend and trend_direction == 'bullish'
+
+                    if not price_above_supertrend:
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: Price not above Supertrend (Price: ${current_price:.6f}, ST: ${supertrend:.6f}, Trend: {trend_direction})")
+                        return False
+
+                    # Step 5: Additional confirmations for quality
+
+                    # Volume surge check
+                    volume_surge = self._check_volume_surge(volumes, threshold=1.5)
+                    if not volume_surge:
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: No volume surge detected")
+                        return False
+
+                    # RSI overbought filter
+                    if rsi > 70:
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: RSI overbought ({rsi:.1f} > 70)")
+                        return False
+
+                    # ADX trend strength filter
+                    if adx < 25:
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: ADX too weak (ADX: {adx:.1f} < 25, not trending)")
+                        return False
+
+                    # ALL CONDITIONS MET! This is a HIGH-QUALITY signal
+                    logger.success(f"🚀 {symbol} MACD+SUPERTREND BUY SIGNAL!")
+                    logger.success(f"   ✅ MACD crossed above signal")
+                    logger.success(f"   ✅ Price above Supertrend (${current_price:.6f} > ${supertrend:.6f})")
+                    logger.success(f"   ✅ Volume surge confirmed")
+                    logger.success(f"   ✅ RSI healthy: {rsi:.1f}")
+                    logger.success(f"   ✅ ADX strong trend: {adx:.1f}")
+
+                    return True
+
+                elif action_type == 'SELL':
+                    # MACD+Supertrend strategy does NOT generate SELL signals
+                    # Risk management (stop-loss/take-profit) handles all exits
+                    # This is intentional - we want to let winners run with trailing stop
+                    return False
+
         except Exception as e:
             logger.error(f"Error evaluating strategies for {symbol}: {e}")
+            import traceback
+            traceback.print_exc()
 
         return False
 
@@ -523,24 +609,235 @@ class TradingEngine:
         variance = sum((x - mean) ** 2 for x in prices) / len(prices)
         return variance ** 0.5
 
-    def _execute_buy(self, symbol, usd_amount, price):
+    def _calculate_ema(self, prices, period):
+        """Calculate Exponential Moving Average"""
+        if len(prices) < period:
+            return None
+
+        multiplier = 2 / (period + 1)
+        ema = prices[0]  # Start with first price
+
+        for price in prices[1:]:
+            ema = (price * multiplier) + (ema * (1 - multiplier))
+
+        return ema
+
+    def _calculate_macd(self, closes):
+        """
+        Calculate MACD (Moving Average Convergence Divergence)
+        Returns: (macd_line, signal_line, histogram)
+        Standard params: 12, 26, 9
+        """
+        if len(closes) < 26:
+            return None, None, None
+
+        # Calculate 12-period and 26-period EMAs
+        ema_12 = []
+        ema_26 = []
+
+        # Calculate EMA for each point
+        for i in range(26, len(closes) + 1):
+            window = closes[i-26:i]
+            ema_12.append(self._calculate_ema(window[-12:], 12))
+            ema_26.append(self._calculate_ema(window, 26))
+
+        # MACD line = EMA12 - EMA26
+        macd_line = [ema_12[i] - ema_26[i] for i in range(len(ema_12))]
+
+        # Signal line = 9-period EMA of MACD line
+        if len(macd_line) < 9:
+            return None, None, None
+
+        signal_line = self._calculate_ema(macd_line[-9:], 9)
+
+        # Histogram = MACD - Signal
+        histogram = macd_line[-1] - signal_line if signal_line else 0
+
+        return macd_line[-1], signal_line, histogram
+
+    def _calculate_atr(self, highs, lows, closes, period=10):
+        """Calculate Average True Range"""
+        if len(highs) < period + 1:
+            return None
+
+        true_ranges = []
+        for i in range(1, len(closes)):
+            high_low = highs[i] - lows[i]
+            high_close = abs(highs[i] - closes[i-1])
+            low_close = abs(lows[i] - closes[i-1])
+            true_range = max(high_low, high_close, low_close)
+            true_ranges.append(true_range)
+
+        # Average of last 'period' true ranges
+        atr = sum(true_ranges[-period:]) / period
+        return atr
+
+    def _calculate_supertrend(self, highs, lows, closes, period=10, multiplier=3):
+        """
+        Calculate Supertrend indicator
+        Returns: (supertrend_value, trend_direction)
+        trend_direction: 'bullish' or 'bearish'
+        """
+        if len(closes) < period + 1:
+            return None, None
+
+        # Calculate ATR
+        atr = self._calculate_atr(highs, lows, closes, period)
+        if not atr:
+            return None, None
+
+        # Calculate basic upper and lower bands
+        hl_avg = (highs[-1] + lows[-1]) / 2
+        upper_band = hl_avg + (multiplier * atr)
+        lower_band = hl_avg - (multiplier * atr)
+
+        current_price = closes[-1]
+
+        # Determine trend
+        if current_price > upper_band:
+            trend = 'bullish'
+            supertrend = lower_band
+        else:
+            trend = 'bearish'
+            supertrend = upper_band
+
+        return supertrend, trend
+
+    def _calculate_rsi(self, closes, period=14):
+        """Calculate Relative Strength Index"""
+        if len(closes) < period + 1:
+            return None
+
+        # Calculate price changes
+        changes = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+
+        # Separate gains and losses
+        gains = [change if change > 0 else 0 for change in changes[-period:]]
+        losses = [-change if change < 0 else 0 for change in changes[-period:]]
+
+        # Calculate average gain and loss
+        avg_gain = sum(gains) / period
+        avg_loss = sum(losses) / period
+
+        if avg_loss == 0:
+            return 100
+
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+
+        return rsi
+
+    def _calculate_adx(self, highs, lows, closes, period=14):
+        """
+        Calculate Average Directional Index (trend strength)
+        ADX > 25 = trending market
+        ADX < 20 = ranging market
+        """
+        if len(closes) < period + 1:
+            return None
+
+        # Calculate +DM and -DM
+        plus_dm = []
+        minus_dm = []
+
+        for i in range(1, len(highs)):
+            high_diff = highs[i] - highs[i-1]
+            low_diff = lows[i-1] - lows[i]
+
+            if high_diff > low_diff and high_diff > 0:
+                plus_dm.append(high_diff)
+            else:
+                plus_dm.append(0)
+
+            if low_diff > high_diff and low_diff > 0:
+                minus_dm.append(low_diff)
+            else:
+                minus_dm.append(0)
+
+        # Calculate ATR
+        atr = self._calculate_atr(highs, lows, closes, period)
+        if not atr or atr == 0:
+            return None
+
+        # Calculate +DI and -DI
+        plus_di = (sum(plus_dm[-period:]) / period) / atr * 100
+        minus_di = (sum(minus_dm[-period:]) / period) / atr * 100
+
+        # Calculate DX
+        di_sum = plus_di + minus_di
+        if di_sum == 0:
+            return None
+
+        dx = abs(plus_di - minus_di) / di_sum * 100
+
+        # ADX is smoothed DX (simplified version)
+        return dx
+
+    def _check_volume_surge(self, volumes, threshold=1.5):
+        """Check if current volume is above average"""
+        if len(volumes) < 20:
+            return False
+
+        avg_volume = sum(volumes[-20:-1]) / 19  # Average of last 19 (excluding current)
+        current_volume = volumes[-1]
+
+        return current_volume > (avg_volume * threshold)
+
+    def _check_macd_crossover(self, symbol, macd_line, signal_line, max_age_minutes=30):
+        """
+        Check if MACD crossed above signal line recently
+        Stores crossover timestamp for tracking
+        """
+        # Initialize crossover tracking dict if needed
+        if not hasattr(self, 'macd_crossovers'):
+            self.macd_crossovers = {}
+
+        # Check if MACD is above signal (bullish)
+        if macd_line > signal_line:
+            # If we don't have a crossover recorded, record it now
+            if symbol not in self.macd_crossovers:
+                self.macd_crossovers[symbol] = datetime.now()
+                logger.info(f"🔔 {symbol} MACD BULLISH CROSSOVER detected! MACD: {macd_line:.6f} > Signal: {signal_line:.6f}")
+                return True
+            else:
+                # Check if crossover is still valid (within time window)
+                crossover_time = self.macd_crossovers[symbol]
+                minutes_since = (datetime.now() - crossover_time).total_seconds() / 60
+
+                if minutes_since <= max_age_minutes:
+                    logger.debug(f"{symbol} MACD crossover still valid ({minutes_since:.1f} min ago)")
+                    return True
+                else:
+                    # Crossover too old, remove it
+                    logger.debug(f"{symbol} MACD crossover expired ({minutes_since:.1f} min ago)")
+                    del self.macd_crossovers[symbol]
+                    return False
+        else:
+            # MACD below signal, clear any crossover
+            if symbol in self.macd_crossovers:
+                del self.macd_crossovers[symbol]
+            return False
+
+    def _execute_buy(self, symbol, usd_amount, price, strategy='unknown'):
         """Execute a BUY order on Kraken"""
         try:
             # Calculate quantity to buy
             quantity = usd_amount / price
 
-            logger.info(f"Executing BUY: {quantity:.8f} {symbol} for ${usd_amount:.2f}")
+            logger.info(f"Executing BUY: {quantity:.8f} {symbol} for ${usd_amount:.2f} (Strategy: {strategy})")
 
             # Place market buy order
             order = self.exchange.create_market_buy_order(symbol, quantity)
 
-            # Track position
+            # Track position with strategy and trailing stop data
             self.positions[symbol] = {
                 'entry_price': price,
                 'quantity': quantity,
                 'usd_invested': usd_amount,
                 'entry_time': datetime.now().isoformat(),
-                'order_id': order.get('id')
+                'order_id': order.get('id'),
+                'strategy': strategy,
+                'highest_price': price  # For trailing stop
             }
 
             # Log trade
@@ -730,10 +1027,37 @@ class TradingEngine:
                 stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
                 take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
 
+                # TRAILING STOP LOGIC (for MACD+Supertrend strategy)
+                strategy = position.get('strategy', 'unknown')
+                if strategy == 'macd_supertrend':
+                    # Update highest price reached
+                    highest_price = position.get('highest_price', entry_price)
+                    if current_price > highest_price:
+                        highest_price = current_price
+                        position['highest_price'] = highest_price
+                        self.save_positions()  # Save updated highest price
+                        logger.info(f"📈 {symbol} NEW HIGH: ${highest_price:.6f} (Entry: ${entry_price:.6f})")
+
+                    # Calculate trailing stop (move stop-loss up as profit grows)
+                    # If price is up 5% or more, move stop-loss to breakeven + 2%
+                    # This locks in profit while letting winners run
+                    profit_from_entry = ((highest_price - entry_price) / entry_price) * 100
+
+                    if profit_from_entry >= 5.0:
+                        # Price has gone up 5%+, activate trailing stop
+                        # Set stop to 3% below highest price reached
+                        trailing_stop_price = highest_price * 0.97  # 3% below high
+
+                        # Make sure trailing stop is always better than entry
+                        if trailing_stop_price > entry_price:
+                            stop_loss_price = max(stop_loss_price, trailing_stop_price)
+                            logger.info(f"🛡️ {symbol} TRAILING STOP ACTIVE: Stop moved to ${stop_loss_price:.6f} (3% below high ${highest_price:.6f})")
+
                 logger.info(f"📊 {symbol} | Current: ${current_price:.6f} | P&L: ${pnl:.4f} ({pnl_percent:+.2f}%) | SL: ${stop_loss_price:.6f} | TP: ${take_profit_price:.6f}")
 
                 # CRITICAL: Check stop-loss FIRST (risk protection is priority)
-                if pnl_percent <= -self.stop_loss_percent:
+                # Now uses trailing stop if applicable
+                if current_price <= stop_loss_price:
                     logger.warning(f"🚨🔴 STOP-LOSS TRIGGERED! 🔴🚨")
                     logger.warning(f"Symbol: {symbol}")
                     logger.warning(f"Entry: ${entry_price:.6f}")
