@@ -821,6 +821,14 @@ class TradingEngine:
     def _execute_buy(self, symbol, usd_amount, price, strategy='unknown'):
         """Execute a BUY order on Kraken"""
         try:
+            # CRITICAL: Check minimum order value to prevent dust positions
+            MIN_ORDER_VALUE = 1.0  # Kraken minimum is ~$1 USD
+
+            if usd_amount < MIN_ORDER_VALUE:
+                logger.warning(f"⚠️ Order value ${usd_amount:.6f} below Kraken minimum ${MIN_ORDER_VALUE}")
+                logger.warning(f"Skipping BUY to avoid creating dust position")
+                return
+
             # Calculate quantity to buy
             quantity = usd_amount / price
 
@@ -893,6 +901,25 @@ class TradingEngine:
                             logger.warning(f"⚠️ Balance mismatch! Tracked: {tracked_quantity:.8f}, Actual: {actual_quantity:.8f}")
                             logger.warning(f"Using actual balance: {actual_quantity:.8f} {base_currency}")
                             quantity = actual_quantity
+
+                        # CRITICAL FIX: Check if position value meets Kraken minimum
+                        position_value_usd = quantity * price
+                        MIN_ORDER_VALUE = 1.0  # Kraken minimum is ~$1 USD
+
+                        if position_value_usd < MIN_ORDER_VALUE:
+                            logger.warning(f"⚠️ DUST POSITION DETECTED!")
+                            logger.warning(f"Position value: ${position_value_usd:.6f} (minimum: ${MIN_ORDER_VALUE})")
+                            logger.warning(f"Quantity: {quantity:.8f} {base_currency} at ${price:.6f}")
+                            logger.warning(f"This position is too small to sell on Kraken (below minimum order size)")
+                            logger.warning(f"Removing dust position from tracking...")
+
+                            # Remove from tracking
+                            del self.positions[symbol]
+                            self.save_positions()
+
+                            logger.info(f"✅ Dust position removed. No further action needed.")
+                            return  # Exit successfully
+
                     else:
                         logger.error(f"❌ No {base_currency} balance found on Kraken!")
                         logger.error(f"Tracked quantity: {tracked_quantity:.8f}")
