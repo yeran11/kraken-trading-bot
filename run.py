@@ -1035,6 +1035,281 @@ def handle_trading_pairs():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ==========================================
+# AI CONFIGURATION & DATA ENDPOINTS
+# ==========================================
+
+@app.route('/api/settings/deepseek', methods=['POST'])
+def save_deepseek_credentials():
+    """Save DeepSeek API credentials"""
+    try:
+        data = request.get_json()
+        api_key = data.get('api_key', '').strip()
+
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 400
+
+        # Update .env file
+        env_file = '.env'
+        if os.path.exists(env_file):
+            with open(env_file, 'r') as f:
+                lines = f.readlines()
+
+            # Update or add DEEPSEEK_API_KEY
+            found = False
+            for i, line in enumerate(lines):
+                if line.startswith('DEEPSEEK_API_KEY='):
+                    lines[i] = f'DEEPSEEK_API_KEY={api_key}\n'
+                    found = True
+                    break
+
+            if not found:
+                lines.append(f'\nDEEPSEEK_API_KEY={api_key}\n')
+
+            with open(env_file, 'w') as f:
+                f.writelines(lines)
+        else:
+            # Create new .env file
+            with open(env_file, 'w') as f:
+                f.write(f'DEEPSEEK_API_KEY={api_key}\n')
+
+        return jsonify({
+            'success': True,
+            'message': 'DeepSeek credentials saved successfully'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/ai-weights', methods=['POST'])
+def save_ai_weights():
+    """Save AI model weights"""
+    try:
+        data = request.get_json()
+        weights = data.get('weights', {})
+
+        # Validate weights sum to 1.0
+        total = sum(weights.values())
+        if abs(total - 1.0) > 0.01:
+            return jsonify({'error': f'Weights must sum to 100% (current: {total*100:.1f}%)'}), 400
+
+        # Save to config file
+        import json
+        config_file = 'ai_config.json'
+
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        else:
+            config = {}
+
+        config['weights'] = weights
+
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Restart AI if trading engine is running
+        global trading_engine
+        if trading_engine and hasattr(trading_engine, 'ai_ensemble'):
+            trading_engine.ai_ensemble.adjust_weights(**weights)
+
+        return jsonify({
+            'success': True,
+            'message': 'AI model weights updated successfully'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/ai-config', methods=['GET', 'POST'])
+def handle_ai_config():
+    """Get or update AI configuration"""
+    try:
+        import json
+
+        if request.method == 'GET':
+            # Load configuration
+            config_file = 'ai_config.json'
+            deepseek_key = os.getenv('DEEPSEEK_API_KEY', '')
+
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+            else:
+                # Default configuration
+                config = {
+                    'weights': {
+                        'sentiment': 0.20,
+                        'technical': 0.35,
+                        'macro': 0.15,
+                        'deepseek': 0.30
+                    },
+                    'settings': {
+                        'min_confidence': 0.65,
+                        'enable_sentiment': True,
+                        'enable_technical': True,
+                        'enable_macro': True,
+                        'enable_deepseek': True,
+                        'enable_ensemble': True
+                    }
+                }
+
+            config['deepseek_configured'] = bool(deepseek_key and 'sk-' in deepseek_key)
+
+            return jsonify(config)
+
+        else:  # POST
+            data = request.get_json()
+
+            config_file = 'ai_config.json'
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+            else:
+                config = {'weights': {}, 'settings': {}}
+
+            # Update settings
+            config['settings'] = data
+
+            with open(config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+
+            # Also update .env
+            env_file = '.env'
+            if os.path.exists(env_file):
+                with open(env_file, 'r') as f:
+                    lines = f.readlines()
+
+                # Update AI settings in .env
+                env_updates = {
+                    'AI_MIN_CONFIDENCE': str(data.get('min_confidence', 0.65)),
+                    'AI_ENSEMBLE_ENABLED': str(data.get('enable_ensemble', True)).lower()
+                }
+
+                for key, value in env_updates.items():
+                    found = False
+                    for i, line in enumerate(lines):
+                        if line.startswith(f'{key}='):
+                            lines[i] = f'{key}={value}\n'
+                            found = True
+                            break
+                    if not found:
+                        lines.append(f'\n{key}={value}\n')
+
+                with open(env_file, 'w') as f:
+                    f.writelines(lines)
+
+            return jsonify({
+                'success': True,
+                'message': 'AI settings updated successfully'
+            })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai/status')
+def ai_status():
+    """Get AI health status"""
+    try:
+        global trading_engine
+
+        if not trading_engine or not hasattr(trading_engine, 'ai_ensemble'):
+            return jsonify({
+                'status': 'NOT_INITIALIZED',
+                'message': 'AI ensemble not initialized. Start the trading engine first.'
+            })
+
+        health = trading_engine.ai_ensemble.get_model_health()
+
+        return jsonify({
+            'status': 'OK',
+            'health': health,
+            'enabled': trading_engine.ai_enabled,
+            'min_confidence': trading_engine.ai_min_confidence
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai/analyze/<symbol>')
+def analyze_symbol(symbol):
+    """Get AI analysis for a specific symbol"""
+    try:
+        global trading_engine
+
+        if not trading_engine or not hasattr(trading_engine, 'ai_ensemble'):
+            return jsonify({
+                'error': 'AI ensemble not initialized'
+            }), 503
+
+        # Fetch market data
+        import ccxt
+        exchange = ccxt.kraken()
+        ticker = exchange.fetch_ticker(symbol)
+        candles_data = exchange.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+
+        # Prepare data for AI
+        candles = []
+        for candle in candles_data:
+            candles.append({
+                'timestamp': candle[0],
+                'open': candle[1],
+                'high': candle[2],
+                'low': candle[3],
+                'close': candle[4],
+                'volume': candle[5]
+            })
+
+        closes = [c[4] for c in candles_data]
+        current_price = ticker['last']
+        technical_indicators = trading_engine._get_technical_indicators(closes, current_price)
+
+        # Get AI analysis
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        ai_result = loop.run_until_complete(
+            trading_engine.ai_ensemble.generate_signal(
+                symbol=symbol,
+                current_price=current_price,
+                candles=candles,
+                technical_indicators=technical_indicators
+            )
+        )
+        loop.close()
+
+        return jsonify({
+            'success': True,
+            'symbol': symbol,
+            'current_price': current_price,
+            'analysis': ai_result
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai/macro')
+def get_macro_analysis():
+    """Get macroeconomic analysis"""
+    try:
+        global trading_engine
+
+        if not trading_engine or not hasattr(trading_engine, 'ai_ensemble'):
+            return jsonify({
+                'error': 'AI ensemble not initialized'
+            }), 503
+
+        macro_analyzer = trading_engine.ai_ensemble.macro
+        summary = macro_analyzer.get_summary()
+
+        return jsonify({
+            'success': True,
+            'macro': summary
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(e):

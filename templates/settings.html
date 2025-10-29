@@ -108,6 +108,190 @@
             </div>
         </div>
 
+        <!-- AI Configuration Section -->
+        <div class="row mb-4">
+            <div class="col-lg-8 mx-auto">
+                <div class="card holo-card">
+                    <div class="card-header" style="background: linear-gradient(135deg, #b84dff, #00d4ff); color: white;">
+                        <h5 class="mb-0">
+                            <i class="fas fa-brain"></i> AI Master Trader Configuration
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert" style="background: rgba(184, 77, 255, 0.15); border: 1px solid #b84dff; color: var(--text-primary);">
+                            <i class="fas fa-robot"></i>
+                            <strong>AI Trading Intelligence:</strong> Configure your 4-model AI ensemble for maximum trading performance.
+                        </div>
+
+                        <!-- DeepSeek API Credentials -->
+                        <h6 class="mt-4 mb-3">
+                            <i class="fas fa-key"></i> DeepSeek AI Credentials
+                        </h6>
+
+                        <form id="deepseek-form">
+                            <div class="mb-3">
+                                <label for="deepseek-api-key" class="form-label">
+                                    <i class="fas fa-brain"></i> DeepSeek API Key
+                                </label>
+                                <input type="password" class="form-control" id="deepseek-api-key"
+                                       placeholder="sk-...">
+                                <small class="form-text text-muted">
+                                    Get your API key from:
+                                    <a href="https://platform.deepseek.com" target="_blank" style="color: #00d4ff;">
+                                        https://platform.deepseek.com
+                                    </a>
+                                </small>
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="show-deepseek-key">
+                                <label class="form-check-label" for="show-deepseek-key">
+                                    Show API key
+                                </label>
+                            </div>
+
+                            <div class="d-grid gap-2 mb-3">
+                                <button type="submit" class="btn btn-neon-purple">
+                                    <i class="fas fa-save"></i> Save DeepSeek Credentials
+                                </button>
+                            </div>
+                        </form>
+
+                        <hr style="border-color: rgba(184, 77, 255, 0.3);">
+
+                        <!-- AI Model Weights -->
+                        <h6 class="mt-4 mb-3">
+                            <i class="fas fa-sliders-h"></i> AI Ensemble Weights
+                        </h6>
+
+                        <div class="alert alert-info" style="background: rgba(0, 212, 255, 0.15); border: 1px solid #00d4ff;">
+                            <small>
+                                Adjust how much each AI model influences trading decisions. Total must equal 100%.
+                            </small>
+                        </div>
+
+                        <form id="ai-weights-form">
+                            <div class="mb-3">
+                                <label for="weight-sentiment" class="form-label d-flex justify-content-between">
+                                    <span><i class="fas fa-newspaper"></i> Sentiment Analysis (News & Social)</span>
+                                    <span id="weight-sentiment-value" class="text-primary fw-bold">20%</span>
+                                </label>
+                                <input type="range" class="form-range" id="weight-sentiment"
+                                       min="0" max="50" value="20" step="5">
+                                <small class="text-muted">HuggingFace RoBERTa sentiment model</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="weight-technical" class="form-label d-flex justify-content-between">
+                                    <span><i class="fas fa-chart-line"></i> Technical Analysis (RSI, MACD, etc)</span>
+                                    <span id="weight-technical-value" class="text-success fw-bold">35%</span>
+                                </label>
+                                <input type="range" class="form-range" id="weight-technical"
+                                       min="0" max="50" value="35" step="5">
+                                <small class="text-muted">Your traditional technical indicators</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="weight-macro" class="form-label d-flex justify-content-between">
+                                    <span><i class="fas fa-globe"></i> Macro Analysis (VIX, DXY, Yields)</span>
+                                    <span id="weight-macro-value" class="text-warning fw-bold">15%</span>
+                                </label>
+                                <input type="range" class="form-range" id="weight-macro"
+                                       min="0" max="50" value="15" step="5">
+                                <small class="text-muted">Economic conditions and market regime</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="weight-deepseek" class="form-label d-flex justify-content-between">
+                                    <span><i class="fas fa-robot"></i> DeepSeek Validator (LLM Reasoning)</span>
+                                    <span id="weight-deepseek-value" class="text-info fw-bold">30%</span>
+                                </label>
+                                <input type="range" class="form-range" id="weight-deepseek"
+                                       min="0" max="50" value="30" step="5">
+                                <small class="text-muted">AI-powered signal validation with reasoning</small>
+                            </div>
+
+                            <div class="alert alert-dark mb-3" id="weight-total-alert">
+                                <strong>Total Weight:</strong> <span id="weight-total">100</span>%
+                                <span id="weight-warning" class="text-danger" style="display: none;">
+                                    ⚠️ Must equal 100%
+                                </span>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-neon-cyan">
+                                    <i class="fas fa-save"></i> Save AI Weights
+                                </button>
+                            </div>
+                        </form>
+
+                        <hr style="border-color: rgba(184, 77, 255, 0.3);">
+
+                        <!-- AI Trading Settings -->
+                        <h6 class="mt-4 mb-3">
+                            <i class="fas fa-cog"></i> AI Trading Settings
+                        </h6>
+
+                        <form id="ai-settings-form">
+                            <div class="mb-3">
+                                <label for="min-confidence" class="form-label d-flex justify-content-between">
+                                    <span><i class="fas fa-percentage"></i> Minimum AI Confidence</span>
+                                    <span id="min-confidence-value" class="text-success fw-bold">65%</span>
+                                </label>
+                                <input type="range" class="form-range" id="min-confidence"
+                                       min="50" max="90" value="65" step="5">
+                                <small class="text-muted">
+                                    Only trade when AI confidence exceeds this threshold
+                                </small>
+                            </div>
+
+                            <div class="mb-3 form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enable-sentiment" checked>
+                                <label class="form-check-label" for="enable-sentiment">
+                                    <i class="fas fa-newspaper"></i> Enable Sentiment Analysis
+                                </label>
+                            </div>
+
+                            <div class="mb-3 form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enable-price-prediction" checked>
+                                <label class="form-check-label" for="enable-price-prediction">
+                                    <i class="fas fa-chart-line"></i> Enable ML Price Prediction
+                                </label>
+                            </div>
+
+                            <div class="mb-3 form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enable-macro" checked>
+                                <label class="form-check-label" for="enable-macro">
+                                    <i class="fas fa-globe"></i> Enable Macro Analysis
+                                </label>
+                            </div>
+
+                            <div class="mb-3 form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enable-deepseek" checked>
+                                <label class="form-check-label" for="enable-deepseek">
+                                    <i class="fas fa-robot"></i> Enable DeepSeek Validation
+                                </label>
+                            </div>
+
+                            <div class="alert alert-warning" style="background: rgba(255, 204, 0, 0.15); border: 1px solid #ffcc00;">
+                                <small>
+                                    <i class="fas fa-info-circle"></i>
+                                    <strong>Note:</strong> Disabling AI models will reduce ensemble accuracy.
+                                    Weights will auto-adjust for disabled models.
+                                </small>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-neon-green">
+                                    <i class="fas fa-save"></i> Save AI Settings
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Risk Management Settings -->
         <div class="row mb-4">
             <div class="col-lg-8 mx-auto">
@@ -953,6 +1137,216 @@
                     $('#save-pairs-config').prop('disabled', false).html('<i class="fas fa-save"></i> Save Trading Pairs Configuration');
                 }
             });
+        });
+
+        // ==========================================
+        // AI CONFIGURATION JAVASCRIPT
+        // ==========================================
+
+        // Real-time weight slider updates
+        function updateWeightDisplays() {
+            const weights = {
+                sentiment: parseInt($('#weight-sentiment').val()),
+                technical: parseInt($('#weight-technical').val()),
+                macro: parseInt($('#weight-macro').val()),
+                deepseek: parseInt($('#weight-deepseek').val())
+            };
+
+            // Update percentage displays
+            $('#weight-sentiment-value').text(weights.sentiment + '%');
+            $('#weight-technical-value').text(weights.technical + '%');
+            $('#weight-macro-value').text(weights.macro + '%');
+            $('#weight-deepseek-value').text(weights.deepseek + '%');
+
+            // Calculate total
+            const total = weights.sentiment + weights.technical + weights.macro + weights.deepseek;
+            $('#weight-total').text(total);
+
+            // Validate total (should be 100%)
+            const alert = $('#weight-total-alert');
+            if (total === 100) {
+                alert.removeClass('alert-warning').addClass('alert-success');
+                alert.find('strong').text('✓ Total Weight:');
+            } else {
+                alert.removeClass('alert-success').addClass('alert-warning');
+                alert.find('strong').text('⚠️ Total Weight:');
+            }
+
+            return total;
+        }
+
+        // Initialize weight sliders
+        $('.form-range[id^="weight-"]').on('input', function() {
+            updateWeightDisplays();
+        });
+
+        // Initialize min confidence slider
+        $('#min-confidence').on('input', function() {
+            $('#min-confidence-value').text($(this).val() + '%');
+        });
+
+        // DeepSeek Credentials Form
+        $('#deepseek-form').on('submit', function(e) {
+            e.preventDefault();
+
+            const apiKey = $('#deepseek-api-key').val().trim();
+
+            if (!apiKey) {
+                showAlert('<i class="fas fa-exclamation-triangle"></i> Please enter a DeepSeek API key', 'warning');
+                return;
+            }
+
+            const submitBtn = $(this).find('button[type="submit"]');
+            submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+
+            $.ajax({
+                url: '/api/settings/deepseek',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    api_key: apiKey
+                }),
+                success: function(response) {
+                    showAlert('<i class="fas fa-check-circle"></i> DeepSeek credentials saved successfully!', 'success');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save DeepSeek Credentials');
+
+                    // Mask the API key after saving
+                    $('#deepseek-api-key').val('sk-••••••••••••••••');
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.error || 'Failed to save DeepSeek credentials';
+                    showAlert('<i class="fas fa-times-circle"></i> Error: ' + error, 'danger');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save DeepSeek Credentials');
+                }
+            });
+        });
+
+        // AI Weights Form
+        $('#ai-weights-form').on('submit', function(e) {
+            e.preventDefault();
+
+            const total = updateWeightDisplays();
+
+            if (total !== 100) {
+                showAlert('<i class="fas fa-exclamation-triangle"></i> Error: Total weight must equal 100%', 'danger');
+                return;
+            }
+
+            const weights = {
+                sentiment: parseInt($('#weight-sentiment').val()) / 100,
+                technical: parseInt($('#weight-technical').val()) / 100,
+                macro: parseInt($('#weight-macro').val()) / 100,
+                deepseek: parseInt($('#weight-deepseek').val()) / 100
+            };
+
+            const submitBtn = $(this).find('button[type="submit"]');
+            submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+
+            $.ajax({
+                url: '/api/settings/ai-weights',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ weights: weights }),
+                success: function(response) {
+                    showAlert('<i class="fas fa-check-circle"></i> AI model weights updated successfully!', 'success');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save Model Weights');
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.error || 'Failed to save AI weights';
+                    showAlert('<i class="fas fa-times-circle"></i> Error: ' + error, 'danger');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save Model Weights');
+                }
+            });
+        });
+
+        // AI Settings Form
+        $('#ai-settings-form').on('submit', function(e) {
+            e.preventDefault();
+
+            const settings = {
+                min_confidence: parseInt($('#min-confidence').val()) / 100,
+                enable_sentiment: $('#enable-sentiment').is(':checked'),
+                enable_technical: $('#enable-technical').is(':checked'),
+                enable_macro: $('#enable-macro').is(':checked'),
+                enable_deepseek: $('#enable-deepseek').is(':checked'),
+                enable_ensemble: $('#enable-ensemble').is(':checked')
+            };
+
+            const submitBtn = $(this).find('button[type="submit"]');
+            submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+
+            $.ajax({
+                url: '/api/settings/ai-config',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(settings),
+                success: function(response) {
+                    showAlert('<i class="fas fa-check-circle"></i> AI trading settings updated successfully!', 'success');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save AI Settings');
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.error || 'Failed to save AI settings';
+                    showAlert('<i class="fas fa-times-circle"></i> Error: ' + error, 'danger');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save AI Settings');
+                }
+            });
+        });
+
+        // Show/Hide DeepSeek API Key
+        $('#deepseek-api-key').after(`
+            <button type="button" class="btn btn-sm btn-outline-secondary position-absolute"
+                    id="toggle-deepseek-key"
+                    style="right: 25px; top: 38px; z-index: 10;">
+                <i class="fas fa-eye"></i>
+            </button>
+        `);
+
+        $('#toggle-deepseek-key').on('click', function() {
+            const input = $('#deepseek-api-key');
+            const icon = $(this).find('i');
+
+            if (input.attr('type') === 'password') {
+                input.attr('type', 'text');
+                icon.removeClass('fa-eye').addClass('fa-eye-slash');
+            } else {
+                input.attr('type', 'password');
+                icon.removeClass('fa-eye-slash').addClass('fa-eye');
+            }
+        });
+
+        // Load AI configuration on page load
+        function loadAIConfig() {
+            $.get('/api/settings/ai-config', function(data) {
+                if (data.weights) {
+                    $('#weight-sentiment').val(Math.round(data.weights.sentiment * 100));
+                    $('#weight-technical').val(Math.round(data.weights.technical * 100));
+                    $('#weight-macro').val(Math.round(data.weights.macro * 100));
+                    $('#weight-deepseek').val(Math.round(data.weights.deepseek * 100));
+                    updateWeightDisplays();
+                }
+
+                if (data.settings) {
+                    $('#min-confidence').val(Math.round(data.settings.min_confidence * 100));
+                    $('#min-confidence-value').text(Math.round(data.settings.min_confidence * 100) + '%');
+                    $('#enable-sentiment').prop('checked', data.settings.enable_sentiment !== false);
+                    $('#enable-technical').prop('checked', data.settings.enable_technical !== false);
+                    $('#enable-macro').prop('checked', data.settings.enable_macro !== false);
+                    $('#enable-deepseek').prop('checked', data.settings.enable_deepseek !== false);
+                    $('#enable-ensemble').prop('checked', data.settings.enable_ensemble !== false);
+                }
+
+                if (data.deepseek_configured) {
+                    $('#deepseek-api-key').val('sk-••••••••••••••••');
+                }
+            }).fail(function() {
+                console.log('Could not load AI configuration');
+            });
+        }
+
+        // Initialize on page load
+        $(document).ready(function() {
+            updateWeightDisplays();
+            loadAIConfig();
         });
     </script>
 </body>

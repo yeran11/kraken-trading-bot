@@ -8,6 +8,11 @@ import os
 from datetime import datetime
 from loguru import logger
 import ccxt
+import asyncio
+import pandas as pd
+
+# AI Ensemble - Master Trader Intelligence
+from ai_ensemble import AIEnsemble
 
 class TradingEngine:
     """
@@ -31,7 +36,25 @@ class TradingEngine:
         self.positions_file = 'positions.json'
         self.trades_file = 'trades_history.json'
 
-        logger.info("Trading Engine initialized")
+        # Initialize AI Ensemble
+        from dotenv import load_dotenv
+        load_dotenv()
+        deepseek_key = os.getenv('DEEPSEEK_API_KEY')
+        self.ai_ensemble = AIEnsemble(deepseek_api_key=deepseek_key)
+
+        # AI configuration
+        self.ai_enabled = os.getenv('AI_ENSEMBLE_ENABLED', 'true').lower() == 'true'
+        self.ai_min_confidence = float(os.getenv('AI_MIN_CONFIDENCE', '0.65'))
+
+        logger.success("✓ Trading Engine initialized with AI Ensemble")
+        if deepseek_key:
+            logger.info("🧠 AI Ensemble: FULL MODE (DeepSeek enabled)")
+        else:
+            logger.warning("🧠 AI Ensemble: DEMO MODE (Set DEEPSEEK_API_KEY for full AI)")
+
+        # Log AI health
+        ai_health = self.ai_ensemble.get_model_health()
+        logger.info(f"AI Health: {ai_health['overall']} - {ai_health}")
 
     def load_config(self):
         """Load trading pairs configuration"""
@@ -329,8 +352,71 @@ class TradingEngine:
         signal = self._evaluate_strategies(symbol, current_price, strategies, 'BUY')
 
         if signal:
+            logger.info(f"🟢 STRATEGY SIGNAL: {symbol} at ${current_price:.2f}")
+
+            # AI VALIDATION - Master Trader validates the signal
+            if self.ai_enabled:
+                try:
+                    logger.info(f"🧠 Validating {symbol} with AI Ensemble...")
+
+                    # Fetch candles for AI analysis
+                    candles_data = self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+
+                    # Convert to list of dicts for AI
+                    candles = []
+                    for candle in candles_data:
+                        candles.append({
+                            'timestamp': candle[0],
+                            'open': candle[1],
+                            'high': candle[2],
+                            'low': candle[3],
+                            'close': candle[4],
+                            'volume': candle[5]
+                        })
+
+                    # Prepare technical indicators for AI
+                    closes = [c[4] for c in candles_data]
+                    technical_indicators = self._get_technical_indicators(closes, current_price)
+
+                    # Get AI signal using asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    ai_result = loop.run_until_complete(
+                        self.ai_ensemble.generate_signal(
+                            symbol=symbol,
+                            current_price=current_price,
+                            candles=candles,
+                            technical_indicators=technical_indicators
+                        )
+                    )
+                    loop.close()
+
+                    ai_signal = ai_result['signal']
+                    ai_confidence = ai_result['confidence']
+                    ai_reasoning = ai_result['reasoning']
+
+                    logger.info(f"🤖 AI Decision: {ai_signal} (confidence: {ai_confidence*100:.1f}%)")
+                    logger.info(f"💭 AI Reasoning: {ai_reasoning}")
+
+                    # Check if AI agrees with BUY
+                    if ai_signal != 'BUY':
+                        logger.warning(f"⚠️ AI OVERRIDE: AI recommends {ai_signal}, cancelling BUY")
+                        return
+
+                    # Check confidence threshold
+                    if ai_confidence < self.ai_min_confidence:
+                        logger.warning(f"⚠️ AI CONFIDENCE TOO LOW: {ai_confidence*100:.1f}% < {self.ai_min_confidence*100:.1f}% threshold")
+                        return
+
+                    logger.success(f"✓ AI APPROVED: {symbol} BUY signal validated!")
+
+                except Exception as e:
+                    logger.error(f"AI validation error: {e}")
+                    logger.warning("Proceeding without AI validation (fallback to strategy only)")
+
             # EXECUTE BUY ORDER
-            logger.info(f"🟢 BUY SIGNAL: {symbol} at ${current_price:.2f}")
+            logger.info(f"🚀 EXECUTING BUY: {symbol} at ${current_price:.2f}")
+
             # Determine which strategy triggered (for trailing stop logic)
             strategy_name = 'unknown'
             if 'macd_supertrend' in strategies:
@@ -1127,6 +1213,79 @@ class TradingEngine:
     def get_trades(self):
         """Get trade history"""
         return self.trades_history
+
+    def _get_technical_indicators(self, closes, current_price):
+        """
+        Prepare technical indicators for AI analysis
+        Returns a dict of technical indicators
+        """
+        try:
+            indicators = {}
+
+            # RSI
+            if len(closes) >= 15:
+                deltas = []
+                for i in range(1, len(closes)):
+                    deltas.append(closes[i] - closes[i-1])
+
+                gains = [d if d > 0 else 0 for d in deltas]
+                losses = [-d if d < 0 else 0 for d in deltas]
+
+                avg_gain = sum(gains[-14:]) / 14 if len(gains) >= 14 else 0
+                avg_loss = sum(losses[-14:]) / 14 if len(losses) >= 14 else 0
+
+                if avg_loss == 0:
+                    rsi = 100
+                else:
+                    rs = avg_gain / avg_loss
+                    rsi = 100 - (100 / (1 + rs))
+
+                indicators['rsi'] = rsi
+            else:
+                indicators['rsi'] = 50
+
+            # MACD
+            if len(closes) >= 26:
+                # Calculate EMA 12
+                ema_12 = closes[0]
+                multiplier_12 = 2 / 13
+                for price in closes[1:]:
+                    ema_12 = (price - ema_12) * multiplier_12 + ema_12
+
+                # Calculate EMA 26
+                ema_26 = closes[0]
+                multiplier_26 = 2 / 27
+                for price in closes[1:]:
+                    ema_26 = (price - ema_26) * multiplier_26 + ema_26
+
+                macd = ema_12 - ema_26
+                indicators['macd'] = macd
+                indicators['macd_signal'] = 'BULLISH' if macd > 0 else 'BEARISH'
+            else:
+                indicators['macd'] = 0
+                indicators['macd_signal'] = 'NEUTRAL'
+
+            # Volume ratio (approximate - use recent average)
+            indicators['volume_ratio'] = 1.0  # Default
+
+            # ADX (simplified - trend strength)
+            indicators['adx'] = 20  # Default moderate trend
+
+            # Supertrend (simplified)
+            indicators['supertrend'] = 'NEUTRAL'
+
+            return indicators
+
+        except Exception as e:
+            logger.error(f"Error calculating technical indicators: {e}")
+            return {
+                'rsi': 50,
+                'macd': 0,
+                'macd_signal': 'NEUTRAL',
+                'volume_ratio': 1.0,
+                'adx': 20,
+                'supertrend': 'NEUTRAL'
+            }
 
     def test_risk_management(self):
         """
