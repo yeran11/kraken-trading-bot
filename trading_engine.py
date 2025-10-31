@@ -1,5 +1,7 @@
 """
-Real Trading Engine - Actually executes trades on Kraken
+Real Trading Engine - Multi-Timeframe AI-Powered Trading
+Supports: Scalping (5m), Day Trading (1h), Swing Trading (4h)
+AI validates ALL trades across multiple timeframes
 """
 import threading
 import time
@@ -13,6 +15,18 @@ import pandas as pd
 
 # AI Ensemble - Master Trader Intelligence
 from ai_ensemble import AIEnsemble
+
+# Multi-Timeframe Trading Components
+from multi_timeframe_analyzer import MultiTimeframeAnalyzer
+from signal_aggregator import SignalAggregator
+from trading_config import (
+    STRATEGY_CONFIGS,
+    TRADING_LOOP_CONFIG,
+    POSITION_RULES,
+    AI_TIMEFRAME_ANALYSIS,
+    get_strategy_config,
+    get_enabled_strategies
+)
 
 class TradingEngine:
     """
@@ -42,18 +56,35 @@ class TradingEngine:
         deepseek_key = os.getenv('DEEPSEEK_API_KEY')
         self.ai_ensemble = AIEnsemble(deepseek_api_key=deepseek_key)
 
+        # Initialize Multi-Timeframe Components
+        self.mt_analyzer = MultiTimeframeAnalyzer(self.exchange)
+        self.signal_aggregator = SignalAggregator(self.exchange)
+        logger.info("✓ Multi-Timeframe Analyzer initialized")
+        logger.info("✓ Signal Aggregator initialized")
+
         # AI configuration
         self.ai_enabled = os.getenv('AI_ENSEMBLE_ENABLED', 'true').lower() == 'true'
         self.ai_min_confidence = float(os.getenv('AI_MIN_CONFIDENCE', '0.65'))
 
         logger.success("=" * 70)
-        logger.success("✓ TRADING ENGINE INITIALIZED")
+        logger.success("✓ MULTI-TIMEFRAME TRADING ENGINE INITIALIZED")
         logger.success("=" * 70)
+
+        # Show enabled trading strategies
+        enabled_strats = get_enabled_strategies()
+        logger.success(f"📊 ACTIVE TRADING STRATEGIES: {len(enabled_strats)}")
+        for strat in enabled_strats:
+            config = get_strategy_config(strat)
+            logger.success(f"   ✓ {config['name']}")
+            logger.success(f"      Timeframe: {config['timeframe']} | Check every: {config['check_interval']//60}min")
+            logger.success(f"      Risk: {config['stop_loss_percent']}% SL / {config['take_profit_percent']}% TP")
+
+        logger.success("")
 
         # CRITICAL: Log AI configuration prominently
         if self.ai_enabled:
             logger.success("🧠 AI ENSEMBLE: ENABLED ✅")
-            logger.success("   ⚡ DeepSeek AI will validate ALL trading decisions")
+            logger.success("   ⚡ DeepSeek AI validates ALL trades across ALL timeframes")
             logger.success(f"   🎯 Minimum confidence threshold: {self.ai_min_confidence*100:.0f}%")
             if deepseek_key:
                 logger.success("   🔑 DeepSeek API Key: CONFIGURED ✅")
@@ -72,6 +103,7 @@ class TradingEngine:
 
         # Log AI health
         ai_health = self.ai_ensemble.get_model_health()
+        logger.info("")
         logger.info(f"📊 AI Health Check: {ai_health['overall']}")
         logger.info(f"   Sentiment Model: {ai_health['sentiment']}")
         logger.info(f"   Technical Analysis: {ai_health['technical']}")
