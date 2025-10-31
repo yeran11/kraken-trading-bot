@@ -292,6 +292,225 @@
             </div>
         </div>
 
+        <!-- Multi-Timeframe Strategy Configuration -->
+        <div class="row mb-4">
+            <div class="col-lg-10 mx-auto">
+                <div class="card holo-card">
+                    <div class="card-header" style="background: linear-gradient(135deg, #ff6b6b, #ffd93d); color: white;">
+                        <h5 class="mb-0">
+                            <i class="fas fa-layer-group"></i> Multi-Timeframe Strategy Configuration
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert" style="background: rgba(255, 107, 107, 0.15); border: 1px solid #ff6b6b;">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Multi-Timeframe Trading:</strong> Each strategy operates on its optimal timeframe (5m, 1h, 4h). Enable/disable strategies and customize their risk parameters below.
+                        </div>
+
+                        <form id="strategy-config-form">
+                            <!-- Strategy 1: Scalping -->
+                            <div class="strategy-config-card mb-4 p-3 border rounded" style="background: rgba(28, 32, 51, 0.6);">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="mb-0">
+                                        <span class="strategy-icon">⚡</span> Scalping (Fast Day Trades)
+                                    </h6>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="strategy-scalping-enabled" checked>
+                                        <label class="form-check-label" for="strategy-scalping-enabled">
+                                            <strong>Enabled</strong>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Timeframe:</strong> 5-minute</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Check Interval:</strong> 1 minute</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Hold Time:</strong> 5min - 2hrs</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>AI Context:</strong> 15-minute</small>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Stop Loss (%):</strong></label>
+                                        <input type="number" class="form-control" id="scalping-stop-loss" value="1.0" min="0.5" max="5" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Take Profit (%):</strong></label>
+                                        <input type="number" class="form-control" id="scalping-take-profit" value="1.5" min="0.5" max="10" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Position Size (%):</strong></label>
+                                        <input type="number" class="form-control" id="scalping-position-size" value="8" min="1" max="25" step="1">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Strategy 2: Momentum -->
+                            <div class="strategy-config-card mb-4 p-3 border rounded" style="background: rgba(28, 32, 51, 0.6);">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="mb-0">
+                                        <span class="strategy-icon">📈</span> Momentum Day Trading
+                                    </h6>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="strategy-momentum-enabled" checked>
+                                        <label class="form-check-label" for="strategy-momentum-enabled">
+                                            <strong>Enabled</strong>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Timeframe:</strong> 1-hour</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Check Interval:</strong> 5 minutes</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Hold Time:</strong> 1hr - 12hrs</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>AI Context:</strong> 4-hour</small>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Stop Loss (%):</strong></label>
+                                        <input type="number" class="form-control" id="momentum-stop-loss" value="2.0" min="0.5" max="10" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Take Profit (%):</strong></label>
+                                        <input type="number" class="form-control" id="momentum-take-profit" value="3.5" min="1" max="15" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Position Size (%):</strong></label>
+                                        <input type="number" class="form-control" id="momentum-position-size" value="12" min="1" max="30" step="1">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Strategy 3: Mean Reversion -->
+                            <div class="strategy-config-card mb-4 p-3 border rounded" style="background: rgba(28, 32, 51, 0.6);">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="mb-0">
+                                        <span class="strategy-icon">🔄</span> Mean Reversion Intraday
+                                    </h6>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="strategy-mean-reversion-enabled" checked>
+                                        <label class="form-check-label" for="strategy-mean-reversion-enabled">
+                                            <strong>Enabled</strong>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Timeframe:</strong> 1-hour</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Check Interval:</strong> 5 minutes</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Hold Time:</strong> 30min - 8hrs</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>AI Context:</strong> 4-hour</small>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Stop Loss (%):</strong></label>
+                                        <input type="number" class="form-control" id="mean-reversion-stop-loss" value="2.0" min="0.5" max="10" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Take Profit (%):</strong></label>
+                                        <input type="number" class="form-control" id="mean-reversion-take-profit" value="3.0" min="1" max="15" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Position Size (%):</strong></label>
+                                        <input type="number" class="form-control" id="mean-reversion-position-size" value="10" min="1" max="30" step="1">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Strategy 4: MACD+Supertrend (Swing) -->
+                            <div class="strategy-config-card mb-4 p-3 border rounded" style="background: rgba(28, 32, 51, 0.6);">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="mb-0">
+                                        <span class="strategy-icon">🎯</span> MACD+Supertrend Swing Trading
+                                    </h6>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="strategy-macd-supertrend-enabled" checked>
+                                        <label class="form-check-label" for="strategy-macd-supertrend-enabled">
+                                            <strong>Enabled</strong>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Timeframe:</strong> 4-hour</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Check Interval:</strong> 15 minutes</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>Hold Time:</strong> 4hrs - 7 days</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted"><strong>AI Context:</strong> Daily</small>
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Stop Loss (%):</strong></label>
+                                        <input type="number" class="form-control" id="macd-supertrend-stop-loss" value="3.0" min="1" max="10" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Take Profit (%):</strong></label>
+                                        <input type="number" class="form-control" id="macd-supertrend-take-profit" value="8.0" min="2" max="20" step="0.5">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label"><strong>Position Size (%):</strong></label>
+                                        <input type="number" class="form-control" id="macd-supertrend-position-size" value="15" min="1" max="35" step="1">
+                                    </div>
+                                </div>
+                                <div class="alert alert-info" style="background: rgba(0, 212, 255, 0.15); border: 1px solid #00d4ff;">
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" id="macd-supertrend-trailing-stop" checked>
+                                        <label class="form-check-label" for="macd-supertrend-trailing-stop">
+                                            <strong>Enable Trailing Stop</strong>
+                                        </label>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label class="form-label"><strong>Activation (%):</strong></label>
+                                            <input type="number" class="form-control" id="macd-supertrend-trailing-activation" value="5.0" min="1" max="10" step="0.5">
+                                            <small class="text-muted">Trailing stop activates when profit hits this %</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label"><strong>Distance (%):</strong></label>
+                                            <input type="number" class="form-control" id="macd-supertrend-trailing-distance" value="3.0" min="1" max="8" step="0.5">
+                                            <small class="text-muted">Trail this % below the highest price</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-lg" style="background: linear-gradient(135deg, #ff6b6b, #ffd93d); color: white; font-weight: bold;">
+                                    <i class="fas fa-save"></i> Save Strategy Configuration
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Risk Management Settings -->
         <div class="row mb-4">
             <div class="col-lg-8 mx-auto">
@@ -330,15 +549,25 @@
                             </div>
 
                             <div class="row mb-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label for="stop-loss" class="form-label">Stop Loss (%)</label>
                                     <input type="number" class="form-control" id="stop-loss"
                                            value="{{ stop_loss }}" min="0.5" max="20" step="0.1">
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label for="take-profit" class="form-label">Take Profit (%)</label>
                                     <input type="number" class="form-control" id="take-profit"
                                            value="{{ take_profit }}" min="0.5" max="50" step="0.1">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="profit-protection-threshold" class="form-label">
+                                        <i class="fas fa-shield-alt"></i> Profit Protection Threshold (%)
+                                        <i class="fas fa-info-circle" data-bs-toggle="tooltip"
+                                           title="AI will be consulted when position profit exceeds this threshold to consider taking profit early"></i>
+                                    </label>
+                                    <input type="number" class="form-control" id="profit-protection-threshold"
+                                           value="2.0" min="0.5" max="10" step="0.1">
+                                    <small class="text-muted">AI consulted when profit exceeds this %</small>
                                 </div>
                             </div>
 
@@ -597,6 +826,60 @@
             });
         });
 
+        // Strategy Configuration Form
+        $('#strategy-config-form').on('submit', function(e) {
+            e.preventDefault();
+
+            const strategies = {
+                scalping: {
+                    enabled: $('#strategy-scalping-enabled').is(':checked'),
+                    stop_loss_percent: parseFloat($('#scalping-stop-loss').val()),
+                    take_profit_percent: parseFloat($('#scalping-take-profit').val()),
+                    position_size_percent: parseFloat($('#scalping-position-size').val())
+                },
+                momentum: {
+                    enabled: $('#strategy-momentum-enabled').is(':checked'),
+                    stop_loss_percent: parseFloat($('#momentum-stop-loss').val()),
+                    take_profit_percent: parseFloat($('#momentum-take-profit').val()),
+                    position_size_percent: parseFloat($('#momentum-position-size').val())
+                },
+                mean_reversion: {
+                    enabled: $('#strategy-mean-reversion-enabled').is(':checked'),
+                    stop_loss_percent: parseFloat($('#mean-reversion-stop-loss').val()),
+                    take_profit_percent: parseFloat($('#mean-reversion-take-profit').val()),
+                    position_size_percent: parseFloat($('#mean-reversion-position-size').val())
+                },
+                macd_supertrend: {
+                    enabled: $('#strategy-macd-supertrend-enabled').is(':checked'),
+                    stop_loss_percent: parseFloat($('#macd-supertrend-stop-loss').val()),
+                    take_profit_percent: parseFloat($('#macd-supertrend-take-profit').val()),
+                    position_size_percent: parseFloat($('#macd-supertrend-position-size').val()),
+                    trailing_stop: $('#macd-supertrend-trailing-stop').is(':checked'),
+                    trailing_activation: parseFloat($('#macd-supertrend-trailing-activation').val()),
+                    trailing_distance: parseFloat($('#macd-supertrend-trailing-distance').val())
+                }
+            };
+
+            const submitBtn = $(this).find('button[type="submit"]');
+            submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+
+            $.ajax({
+                url: '/api/settings/strategies',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ strategies: strategies }),
+                success: function(response) {
+                    showAlert('<i class="fas fa-check-circle"></i> ' + response.message, 'success');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save Strategy Configuration');
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.error || 'Failed to save strategy configuration';
+                    showAlert('<i class="fas fa-times-circle"></i> Error: ' + error, 'danger');
+                    submitBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save Strategy Configuration');
+                }
+            });
+        });
+
         // Risk Settings Form
         $('#risk-settings-form').on('submit', function(e) {
             e.preventDefault();
@@ -607,7 +890,8 @@
                 max_exposure: parseFloat($('#max-exposure').val()),
                 max_daily_loss: parseFloat($('#max-daily-loss').val()),
                 stop_loss: parseFloat($('#stop-loss').val()),
-                take_profit: parseFloat($('#take-profit').val())
+                take_profit: parseFloat($('#take-profit').val()),
+                profit_protection_threshold: parseFloat($('#profit-protection-threshold').val())
             };
 
             $.ajax({
@@ -1343,10 +1627,69 @@
             });
         }
 
+        // Load Strategy Configuration
+        function loadStrategyConfig() {
+            $.get('/api/settings/strategies', function(data) {
+                if (data.strategies) {
+                    // Update Scalping
+                    if (data.strategies.scalping) {
+                        $('#strategy-scalping-enabled').prop('checked', data.strategies.scalping.enabled);
+                        $('#scalping-stop-loss').val(data.strategies.scalping.stop_loss_percent);
+                        $('#scalping-take-profit').val(data.strategies.scalping.take_profit_percent);
+                        $('#scalping-position-size').val(data.strategies.scalping.position_size_percent);
+                    }
+
+                    // Update Momentum
+                    if (data.strategies.momentum) {
+                        $('#strategy-momentum-enabled').prop('checked', data.strategies.momentum.enabled);
+                        $('#momentum-stop-loss').val(data.strategies.momentum.stop_loss_percent);
+                        $('#momentum-take-profit').val(data.strategies.momentum.take_profit_percent);
+                        $('#momentum-position-size').val(data.strategies.momentum.position_size_percent);
+                    }
+
+                    // Update Mean Reversion
+                    if (data.strategies.mean_reversion) {
+                        $('#strategy-mean-reversion-enabled').prop('checked', data.strategies.mean_reversion.enabled);
+                        $('#mean-reversion-stop-loss').val(data.strategies.mean_reversion.stop_loss_percent);
+                        $('#mean-reversion-take-profit').val(data.strategies.mean_reversion.take_profit_percent);
+                        $('#mean-reversion-position-size').val(data.strategies.mean_reversion.position_size_percent);
+                    }
+
+                    // Update MACD+Supertrend
+                    if (data.strategies.macd_supertrend) {
+                        $('#strategy-macd-supertrend-enabled').prop('checked', data.strategies.macd_supertrend.enabled);
+                        $('#macd-supertrend-stop-loss').val(data.strategies.macd_supertrend.stop_loss_percent);
+                        $('#macd-supertrend-take-profit').val(data.strategies.macd_supertrend.take_profit_percent);
+                        $('#macd-supertrend-position-size').val(data.strategies.macd_supertrend.position_size_percent);
+                        $('#macd-supertrend-trailing-stop').prop('checked', data.strategies.macd_supertrend.trailing_stop);
+                        $('#macd-supertrend-trailing-activation').val(data.strategies.macd_supertrend.trailing_activation || 5.0);
+                        $('#macd-supertrend-trailing-distance').val(data.strategies.macd_supertrend.trailing_distance || 3.0);
+                    }
+                }
+            }).fail(function() {
+                console.log('Could not load strategy configuration');
+            });
+        }
+
+        // Load Profit Protection Threshold
+        function loadProfitProtection() {
+            // Try to read from config - will default to 2.0 if not found
+            $.get('/api/settings', function(data) {
+                if (data.risk_settings && data.risk_settings.profit_protection_threshold) {
+                    $('#profit-protection-threshold').val(data.risk_settings.profit_protection_threshold);
+                }
+            }).fail(function() {
+                // Default already set in HTML
+                console.log('Using default profit protection threshold');
+            });
+        }
+
         // Initialize on page load
         $(document).ready(function() {
             updateWeightDisplays();
             loadAIConfig();
+            loadStrategyConfig();
+            loadProfitProtection();
         });
     </script>
 </body>

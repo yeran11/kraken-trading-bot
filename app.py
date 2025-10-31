@@ -540,16 +540,30 @@ def update_risk_settings():
             'max_exposure': 'MAX_TOTAL_EXPOSURE_USD',
             'max_daily_loss': 'MAX_DAILY_LOSS_USD',
             'stop_loss': 'STOP_LOSS_PERCENT',
-            'take_profit': 'TAKE_PROFIT_PERCENT'
+            'take_profit': 'TAKE_PROFIT_PERCENT',
+            'profit_protection_threshold': 'PROFIT_PROTECTION_THRESHOLD'
         }
+
+        # First, check if PROFIT_PROTECTION_THRESHOLD exists in .env
+        has_profit_protection = any(line.startswith('PROFIT_PROTECTION_THRESHOLD=') for line in lines)
 
         for key, env_var in settings_map.items():
             if key in data:
                 value = data[key]
+                updated = False
                 for i, line in enumerate(lines):
                     if line.startswith(f'{env_var}='):
                         lines[i] = f'{env_var}={value}\n'
+                        updated = True
                         break
+
+                # If PROFIT_PROTECTION_THRESHOLD doesn't exist, add it
+                if not updated and key == 'profit_protection_threshold':
+                    # Find the risk management section and add it there
+                    for i, line in enumerate(lines):
+                        if 'TAKE_PROFIT_PERCENT' in line:
+                            lines.insert(i + 1, f'\n# Profit protection threshold - AI consulted when profit exceeds this %\n{env_var}={value}\n')
+                            break
 
         # Write updated content
         with open(env_file, 'w') as f:
@@ -571,6 +585,127 @@ def update_risk_settings():
 
     except Exception as e:
         logger.error(f"Error updating risk settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/strategies', methods=['GET', 'POST'])
+def handle_strategy_settings():
+    """Get or update multi-timeframe strategy configuration"""
+    try:
+        if request.method == 'GET':
+            # Read current configuration from trading_config.py
+            from trading_config import STRATEGY_CONFIGS, POSITION_RULES
+
+            # Format the response
+            strategies = {}
+            for strategy_name, config in STRATEGY_CONFIGS.items():
+                strategies[strategy_name] = {
+                    'name': config['name'],
+                    'timeframe': config['timeframe'],
+                    'enabled': config.get('enabled', True),
+                    'stop_loss_percent': config['stop_loss_percent'],
+                    'take_profit_percent': config['take_profit_percent'],
+                    'check_interval': config['check_interval'],
+                    'trailing_stop': config.get('trailing_stop', False),
+                    'trailing_activation': config.get('trailing_activation'),
+                    'trailing_distance': config.get('trailing_distance'),
+                    'position_size_percent': POSITION_RULES['position_size_percent'].get(strategy_name, 10)
+                }
+
+            return jsonify({
+                'strategies': strategies
+            })
+
+        else:  # POST
+            data = request.get_json()
+            strategies = data.get('strategies', {})
+
+            # Read trading_config.py
+            config_file = 'trading_config.py'
+            if not os.path.exists(config_file):
+                return jsonify({'error': 'trading_config.py not found'}), 500
+
+            with open(config_file, 'r') as f:
+                lines = f.readlines()
+
+            # Update strategy configurations
+            for strategy_name, settings in strategies.items():
+                # Find the strategy in the file and update its values
+                in_strategy = False
+                strategy_key = f"'{strategy_name}':"
+
+                for i, line in enumerate(lines):
+                    # Check if we're entering this strategy's config
+                    if strategy_key in line:
+                        in_strategy = True
+                        continue
+
+                    # Update values within this strategy
+                    if in_strategy:
+                        # Check if we've left this strategy's block
+                        if line.strip().startswith('}') and ',' in line:
+                            in_strategy = False
+                            continue
+
+                        # Update enabled status
+                        if "'enabled':" in line and 'enabled' in settings:
+                            indent = len(line) - len(line.lstrip())
+                            lines[i] = ' ' * indent + f"'enabled': {str(settings['enabled'])}\n"
+
+                        # Update stop loss
+                        if "'stop_loss_percent':" in line and 'stop_loss_percent' in settings:
+                            indent = len(line) - len(line.lstrip())
+                            lines[i] = ' ' * indent + f"'stop_loss_percent': {settings['stop_loss_percent']},\n"
+
+                        # Update take profit
+                        if "'take_profit_percent':" in line and 'take_profit_percent' in settings:
+                            indent = len(line) - len(line.lstrip())
+                            lines[i] = ' ' * indent + f"'take_profit_percent': {settings['take_profit_percent']},\n"
+
+                        # Update trailing stop settings (only for macd_supertrend)
+                        if strategy_name == 'macd_supertrend':
+                            if "'trailing_stop':" in line and 'trailing_stop' in settings:
+                                indent = len(line) - len(line.lstrip())
+                                lines[i] = ' ' * indent + f"'trailing_stop': {str(settings['trailing_stop'])},\n"
+
+                            if "'trailing_activation':" in line and 'trailing_activation' in settings:
+                                indent = len(line) - len(line.lstrip())
+                                lines[i] = ' ' * indent + f"'trailing_activation': {settings['trailing_activation']},\n"
+
+                            if "'trailing_distance':" in line and 'trailing_distance' in settings:
+                                indent = len(line) - len(line.lstrip())
+                                lines[i] = ' ' * indent + f"'trailing_distance': {settings['trailing_distance']},\n"
+
+            # Update position size percentages in POSITION_RULES
+            in_position_size = False
+            for i, line in enumerate(lines):
+                if "'position_size_percent':" in line:
+                    in_position_size = True
+                    continue
+
+                if in_position_size:
+                    if '}' in line:
+                        in_position_size = False
+                        continue
+
+                    # Update each strategy's position size
+                    for strategy_name, settings in strategies.items():
+                        if f"'{strategy_name}':" in line and 'position_size_percent' in settings:
+                            indent = len(line) - len(line.lstrip())
+                            lines[i] = ' ' * indent + f"'{strategy_name}': {int(settings['position_size_percent'])},\n"
+
+            # Write updated content
+            with open(config_file, 'w') as f:
+                f.writelines(lines)
+
+            logger.info(f"Strategy configuration updated: {list(strategies.keys())}")
+
+            return jsonify({
+                'success': True,
+                'message': 'Strategy configuration updated successfully. Restart the bot for changes to take effect.'
+            })
+
+    except Exception as e:
+        logger.error(f"Error handling strategy settings: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/trading-mode', methods=['POST'])
