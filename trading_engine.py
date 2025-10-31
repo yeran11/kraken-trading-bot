@@ -411,8 +411,10 @@ class TradingEngine:
                     logger.success(f"✓ AI APPROVED: {symbol} BUY signal validated!")
 
                 except Exception as e:
-                    logger.error(f"AI validation error: {e}")
-                    logger.warning("Proceeding without AI validation (fallback to strategy only)")
+                    logger.error(f"❌ AI validation error: {e}")
+                    logger.critical("⚠️ AI VALIDATION FAILED - Cannot validate BUY signal safely")
+                    logger.warning("🛡️ SKIPPING TRADE for safety (AI ensemble required for validation)")
+                    return  # Don't trade if AI fails - safety first!
 
             # EXECUTE BUY ORDER
             logger.info(f"🚀 EXECUTING BUY: {symbol} at ${current_price:.6f}")
@@ -431,31 +433,119 @@ class TradingEngine:
             self._execute_buy(symbol, investment, current_price, strategy_name)
 
     def _check_sell_signal(self, symbol, current_price, strategies):
-        """Check if we should sell this position"""
+        """Check if we should sell this position - WITH AI VALIDATION"""
         position = self.positions[symbol]
         entry_price = position['entry_price']
 
         # Calculate P&L
         pnl_percent = ((current_price - entry_price) / entry_price) * 100
 
-        # Check stop-loss
+        # EMERGENCY STOP-LOSS - Execute immediately without AI (emergency exit)
         if pnl_percent <= -self.stop_loss_percent:
-            logger.warning(f"🔴 STOP LOSS triggered: {symbol} at {pnl_percent:.2f}%")
+            logger.warning(f"🔴 EMERGENCY STOP LOSS triggered: {symbol} at {pnl_percent:.2f}%")
             self._execute_sell(symbol, current_price, "STOP_LOSS")
             return
 
-        # Check take-profit
+        # For all other scenarios, consult AI FIRST before selling
+        # This includes: take-profit, strategy signals, and profit protection
+
+        # Check if we have profit to protect or if take-profit is near
+        should_consider_selling = False
+        sell_reason = None
+
+        # Automatic take-profit hit
         if pnl_percent >= self.take_profit_percent:
-            logger.info(f"🟢 TAKE PROFIT triggered: {symbol} at {pnl_percent:.2f}%")
-            self._execute_sell(symbol, current_price, "TAKE_PROFIT")
-            return
+            logger.info(f"🟢 TAKE PROFIT level reached: {symbol} at {pnl_percent:.2f}%")
+            should_consider_selling = True
+            sell_reason = "TAKE_PROFIT"
+
+        # Profit protection - if we're up 2%+, AI should evaluate if we should lock it in
+        elif pnl_percent >= 2.0:
+            logger.info(f"💰 Profit protection: {symbol} up {pnl_percent:.2f}% - consulting AI")
+            should_consider_selling = True
+            sell_reason = "PROFIT_PROTECTION"
 
         # Check strategy sell signals
-        signal = self._evaluate_strategies(symbol, current_price, strategies, 'SELL')
+        else:
+            signal = self._evaluate_strategies(symbol, current_price, strategies, 'SELL')
+            if signal:
+                logger.info(f"🟡 STRATEGY SELL SIGNAL: {symbol} at ${current_price:.6f} (P&L: {pnl_percent:.2f}%)")
+                should_consider_selling = True
+                sell_reason = "STRATEGY"
 
-        if signal:
-            logger.info(f"🟡 SELL SIGNAL: {symbol} at ${current_price:.6f} (P&L: {pnl_percent:.2f}%)")
-            self._execute_sell(symbol, current_price, "STRATEGY")
+        # If any sell condition triggered, validate with AI
+        if should_consider_selling and self.ai_enabled:
+            try:
+                logger.info(f"🧠 Consulting AI for SELL decision on {symbol} (P&L: {pnl_percent:.2f}%, Reason: {sell_reason})...")
+
+                # Fetch candles for AI analysis
+                candles_data = self.exchange.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+
+                # Convert to list of dicts for AI
+                candles = []
+                for candle in candles_data:
+                    candles.append({
+                        'timestamp': candle[0],
+                        'open': candle[1],
+                        'high': candle[2],
+                        'low': candle[3],
+                        'close': candle[4],
+                        'volume': candle[5]
+                    })
+
+                # Prepare technical indicators for AI
+                closes = [c[4] for c in candles_data]
+                technical_indicators = self._get_technical_indicators(closes, current_price)
+
+                # Add position context for AI
+                technical_indicators['position_pnl'] = pnl_percent
+                technical_indicators['entry_price'] = entry_price
+                technical_indicators['hold_time'] = position.get('entry_time', 'unknown')
+
+                # Get AI signal using asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                ai_result = loop.run_until_complete(
+                    self.ai_ensemble.generate_signal(
+                        symbol=symbol,
+                        current_price=current_price,
+                        candles=candles,
+                        technical_indicators=technical_indicators
+                    )
+                )
+                loop.close()
+
+                ai_signal = ai_result['signal']
+                ai_confidence = ai_result['confidence']
+                ai_reasoning = ai_result['reasoning']
+
+                logger.info(f"🤖 AI SELL Decision: {ai_signal} (confidence: {ai_confidence*100:.1f}%)")
+                logger.info(f"💭 AI Reasoning: {ai_reasoning}")
+
+                # AI can recommend SELL (take profits) or HOLD (let it run)
+                if ai_signal == 'SELL' and ai_confidence >= self.ai_min_confidence:
+                    logger.success(f"✓ AI APPROVED SELL: {symbol} - Taking profits at {pnl_percent:.2f}%")
+                    self._execute_sell(symbol, current_price, sell_reason)
+                    return
+                elif ai_signal == 'HOLD':
+                    logger.info(f"🤚 AI RECOMMENDS HOLD: Letting {symbol} run (current P&L: {pnl_percent:.2f}%)")
+                    return
+                else:
+                    # AI says BUY or confidence too low - default to HOLD
+                    logger.warning(f"⚠️ AI suggests {ai_signal} or confidence too low ({ai_confidence*100:.1f}%) - defaulting to HOLD")
+                    return
+
+            except Exception as e:
+                logger.error(f"AI SELL validation error: {e}")
+                logger.warning("Proceeding with sell decision based on strategy only")
+                # Fallback: if AI fails and take-profit hit, sell anyway
+                if sell_reason == "TAKE_PROFIT":
+                    self._execute_sell(symbol, current_price, sell_reason)
+
+        elif should_consider_selling and not self.ai_enabled:
+            # AI disabled - use simple rules
+            if sell_reason == "TAKE_PROFIT":
+                self._execute_sell(symbol, current_price, sell_reason)
 
     def _evaluate_strategies(self, symbol, current_price, strategies, action_type):
         """
