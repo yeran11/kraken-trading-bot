@@ -28,6 +28,43 @@ from trading_config import (
     get_enabled_strategies
 )
 
+
+def format_price(price: float) -> str:
+    """
+    Dynamically format price based on its magnitude to handle both high and low-priced tokens.
+
+    Args:
+        price: The price value to format
+
+    Returns:
+        Formatted price string with appropriate decimal places
+
+    Examples:
+        $1234.56 -> "$1234.56" (2 decimals)
+        $12.3456 -> "$12.35" (2 decimals)
+        $0.123456 -> "$0.1235" (4 decimals)
+        $0.00123456 -> "$0.001235" (6 decimals)
+        $0.00000123 -> "$0.0000012" (8 decimals)
+    """
+    if price == 0:
+        return "$0.00"
+
+    abs_price = abs(price)
+
+    # For prices >= $1, use 2 decimals
+    if abs_price >= 1:
+        return f"${price:.2f}"
+    # For prices >= $0.01, use 4 decimals
+    elif abs_price >= 0.01:
+        return f"${price:.4f}"
+    # For prices >= $0.0001, use 6 decimals
+    elif abs_price >= 0.0001:
+        return f"${price:.6f}"
+    # For very small prices (< $0.0001), use 8 decimals
+    else:
+        return f"${price:.8f}"
+
+
 class TradingEngine:
     """
     The REAL trading engine that actually makes trades
@@ -407,7 +444,7 @@ class TradingEngine:
         signal = self._evaluate_strategies(symbol, current_price, strategies, 'BUY')
 
         if signal:
-            logger.info(f"🟢 STRATEGY SIGNAL: {symbol} at ${current_price:.6f}")
+            logger.info(f"🟢 STRATEGY SIGNAL: {symbol} at {format_price(current_price)}")
 
             # ============================================
             # MANDATORY AI VALIDATION - DeepSeek AI validates ALL trades
@@ -488,7 +525,7 @@ class TradingEngine:
                 return  # Don't trade if AI fails - safety first!
 
             # EXECUTE BUY ORDER (Only reached if AI approved)
-            logger.info(f"🚀 EXECUTING AI-APPROVED BUY: {symbol} at ${current_price:.6f}")
+            logger.info(f"🚀 EXECUTING AI-APPROVED BUY: {symbol} at {format_price(current_price)}")
 
             # Determine which strategy triggered (for trailing stop logic)
             strategy_name = 'unknown'
@@ -540,7 +577,7 @@ class TradingEngine:
         else:
             signal = self._evaluate_strategies(symbol, current_price, strategies, 'SELL')
             if signal:
-                logger.info(f"🟡 STRATEGY SELL SIGNAL: {symbol} at ${current_price:.6f} (P&L: {pnl_percent:.2f}%)")
+                logger.info(f"🟡 STRATEGY SELL SIGNAL: {symbol} at {format_price(current_price)} (P&L: {pnl_percent:.2f}%)")
                 should_consider_selling = True
                 sell_reason = "STRATEGY"
 
@@ -670,7 +707,7 @@ class TradingEngine:
                     sma_diff_percent = ((sma_5 - sma_20) / sma_20) * 100
 
                     if sma_5 > sma_20 and current_price > sma_5 and sma_diff_percent >= 0.5:
-                        logger.info(f"{symbol} Momentum BUY signal: Price ${current_price:.6f} > SMA5 ${sma_5:.6f} > SMA20 ${sma_20:.6f} (Gap: {sma_diff_percent:.2f}%)")
+                        logger.info(f"{symbol} Momentum BUY signal: Price {format_price(current_price)} > SMA5 {format_price(sma_5)} > SMA20 {format_price(sma_20)} (Gap: {sma_diff_percent:.2f}%)")
                         return True
                     else:
                         logger.debug(f"{symbol} Momentum BUY: Not strong enough. SMA5/SMA20 gap: {sma_diff_percent:.2f}% (need 0.5%+)")
@@ -712,10 +749,10 @@ class TradingEngine:
                     # Buy when price drops below lower band (oversold)
                     if current_price < lower_band:
                         deviation = ((current_price - lower_band) / lower_band) * 100
-                        logger.info(f"{symbol} Mean Reversion BUY: Price ${current_price:.6f} < Lower Band ${lower_band:.6f} (Deviation: {deviation:.2f}%)")
+                        logger.info(f"{symbol} Mean Reversion BUY: Price {format_price(current_price)} < Lower Band {format_price(lower_band)} (Deviation: {deviation:.2f}%)")
                         return True
                     else:
-                        logger.debug(f"{symbol} Mean Reversion BUY: Not oversold. Price: ${current_price:.6f}, Lower Band: ${lower_band:.6f}")
+                        logger.debug(f"{symbol} Mean Reversion BUY: Not oversold. Price: {format_price(current_price)}, Lower Band: {format_price(lower_band)}")
 
                 elif action_type == 'SELL':
                     # CRITICAL FIX: Sell when price returns to middle or above
@@ -743,16 +780,16 @@ class TradingEngine:
                         # 3. Profit >= 2.5% (good profit regardless of bands)
 
                         if current_price >= middle_band and profit_percent >= 1.5:
-                            logger.info(f"{symbol} Mean Reversion SELL: Price returned to middle - ${current_price:.6f} >= ${middle_band:.6f}, Profit: {profit_percent:.2f}%")
+                            logger.info(f"{symbol} Mean Reversion SELL: Price returned to middle - {format_price(current_price)} >= {format_price(middle_band)}, Profit: {profit_percent:.2f}%")
                             return True
                         elif current_price > upper_band:
-                            logger.info(f"{symbol} Mean Reversion SELL: Extreme overbought - Price ${current_price:.6f} > Upper Band ${upper_band:.6f}, Profit: {profit_percent:.2f}%")
+                            logger.info(f"{symbol} Mean Reversion SELL: Extreme overbought - Price {format_price(current_price)} > Upper Band {format_price(upper_band)}, Profit: {profit_percent:.2f}%")
                             return True
                         elif profit_percent >= 2.5:
                             logger.info(f"{symbol} Mean Reversion SELL: Good profit target reached - {profit_percent:.2f}%")
                             return True
                         else:
-                            logger.debug(f"{symbol} Mean Reversion SELL: Waiting for reversion. Price: ${current_price:.6f}, Middle: ${middle_band:.6f}, Profit: {profit_percent:.2f}%")
+                            logger.debug(f"{symbol} Mean Reversion SELL: Waiting for reversion. Price: {format_price(current_price)}, Middle: {format_price(middle_band)}, Profit: {profit_percent:.2f}%")
                             return False
 
             if 'scalping' in strategies:
@@ -763,7 +800,7 @@ class TradingEngine:
                 if action_type == 'BUY':
                     # Buy on bigger dips (changed from 0.5% to 1.5%)
                     if current_price < sma_10 * 0.985:  # 1.5% below 10-period average
-                        logger.info(f"{symbol} Scalping BUY: Price ${current_price:.6f} dipped 1.5%+ below SMA10")
+                        logger.info(f"{symbol} Scalping BUY: Price {format_price(current_price)} dipped 1.5%+ below SMA10")
                         return True
                     else:
                         logger.debug(f"{symbol} Scalping BUY: Dip not significant enough")
@@ -819,14 +856,14 @@ class TradingEngine:
                     macd_crossed = self._check_macd_crossover(symbol, macd_line, signal_line, max_age_minutes=30)
 
                     if not macd_crossed:
-                        logger.debug(f"{symbol} MACD+Supertrend BUY: No recent MACD crossover (MACD: {macd_line:.6f}, Signal: {signal_line:.6f})")
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: No recent MACD crossover (MACD: {macd_line:.8f}, Signal: {signal_line:.8f})")
                         return False
 
                     # Step 4: SECOND condition - Price must be above Supertrend (bullish)
                     price_above_supertrend = current_price > supertrend and trend_direction == 'bullish'
 
                     if not price_above_supertrend:
-                        logger.debug(f"{symbol} MACD+Supertrend BUY: Price not above Supertrend (Price: ${current_price:.6f}, ST: ${supertrend:.6f}, Trend: {trend_direction})")
+                        logger.debug(f"{symbol} MACD+Supertrend BUY: Price not above Supertrend (Price: {format_price(current_price)}, ST: {format_price(supertrend)}, Trend: {trend_direction})")
                         return False
 
                     # Step 5: Additional confirmations for quality
@@ -850,7 +887,7 @@ class TradingEngine:
                     # ALL CONDITIONS MET! This is a HIGH-QUALITY signal
                     logger.success(f"🚀 {symbol} MACD+SUPERTREND BUY SIGNAL!")
                     logger.success(f"   ✅ MACD crossed above signal")
-                    logger.success(f"   ✅ Price above Supertrend (${current_price:.6f} > ${supertrend:.6f})")
+                    logger.success(f"   ✅ Price above Supertrend ({format_price(current_price)} > {format_price(supertrend)})")
                     logger.success(f"   ✅ Volume surge confirmed")
                     logger.success(f"   ✅ RSI healthy: {rsi:.1f}")
                     logger.success(f"   ✅ ADX strong trend: {adx:.1f}")
@@ -1064,7 +1101,7 @@ class TradingEngine:
             # If we don't have a crossover recorded, record it now
             if symbol not in self.macd_crossovers:
                 self.macd_crossovers[symbol] = datetime.now()
-                logger.info(f"🔔 {symbol} MACD BULLISH CROSSOVER detected! MACD: {macd_line:.6f} > Signal: {signal_line:.6f}")
+                logger.info(f"🔔 {symbol} MACD BULLISH CROSSOVER detected! MACD: {macd_line:.8f} > Signal: {signal_line:.8f}")
                 return True
             else:
                 # Check if crossover is still valid (within time window)
@@ -1176,7 +1213,7 @@ class TradingEngine:
                         if position_value_usd < MIN_ORDER_VALUE:
                             logger.warning(f"⚠️ DUST POSITION DETECTED!")
                             logger.warning(f"Position value: ${position_value_usd:.6f} (minimum: ${MIN_ORDER_VALUE})")
-                            logger.warning(f"Quantity: {quantity:.8f} {base_currency} at ${price:.6f}")
+                            logger.warning(f"Quantity: {quantity:.8f} {base_currency} at {format_price(price)}")
                             logger.warning(f"This position is too small to sell on Kraken (below minimum order size)")
                             logger.warning(f"Removing dust position from tracking...")
 
@@ -1241,8 +1278,8 @@ class TradingEngine:
                 logger.success(f"✅✅✅ SELL ORDER EXECUTED SUCCESSFULLY ✅✅✅")
                 logger.success(f"Symbol: {symbol}")
                 logger.success(f"Quantity: {quantity:.8f}")
-                logger.success(f"Entry Price: ${entry_price:.6f}")
-                logger.success(f"Exit Price: ${price:.6f}")
+                logger.success(f"Entry Price: {format_price(entry_price)}")
+                logger.success(f"Exit Price: {format_price(price)}")
                 logger.success(f"{profit_loss}: ${pnl:.4f} ({pnl_percent:+.2f}%)")
                 logger.success(f"Reason: {reason}")
                 logger.success(f"Order ID: {order.get('id')}")
@@ -1292,7 +1329,7 @@ class TradingEngine:
                 quantity = position['quantity']
                 entry_time = position.get('entry_time', 'unknown')
 
-                logger.debug(f"Checking {symbol}: Entry=${entry_price:.6f}, Qty={quantity:.4f}")
+                logger.debug(f"Checking {symbol}: Entry={format_price(entry_price)}, Qty={quantity:.4f}")
 
                 # Fetch current price with retry mechanism
                 current_price = None
@@ -1320,7 +1357,7 @@ class TradingEngine:
                 if position_value_usd < MIN_POSITION_VALUE:
                     logger.warning(f"🗑️ DUST POSITION DETECTED: {symbol}")
                     logger.warning(f"   Position value: ${position_value_usd:.6f} (minimum: ${MIN_POSITION_VALUE:.2f})")
-                    logger.warning(f"   Quantity: {quantity:.8f} at ${current_price:.6f}")
+                    logger.warning(f"   Quantity: {quantity:.8f} at {format_price(current_price)}")
                     logger.warning(f"   This position is too small to trade - REMOVING from tracking")
 
                     # Remove dust position
@@ -1347,7 +1384,7 @@ class TradingEngine:
                         highest_price = current_price
                         position['highest_price'] = highest_price
                         self.save_positions()  # Save updated highest price
-                        logger.info(f"📈 {symbol} NEW HIGH: ${highest_price:.6f} (Entry: ${entry_price:.6f})")
+                        logger.info(f"📈 {symbol} NEW HIGH: {format_price(highest_price)} (Entry: {format_price(entry_price)})")
 
                     # Calculate trailing stop (move stop-loss up as profit grows)
                     # If price is up 5% or more, move stop-loss to breakeven + 2%
@@ -1362,17 +1399,17 @@ class TradingEngine:
                         # Make sure trailing stop is always better than entry
                         if trailing_stop_price > entry_price:
                             stop_loss_price = max(stop_loss_price, trailing_stop_price)
-                            logger.info(f"🛡️ {symbol} TRAILING STOP ACTIVE: Stop moved to ${stop_loss_price:.6f} (3% below high ${highest_price:.6f})")
+                            logger.info(f"🛡️ {symbol} TRAILING STOP ACTIVE: Stop moved to {format_price(stop_loss_price)} (3% below high {format_price(highest_price)})")
 
-                logger.info(f"📊 {symbol} | Current: ${current_price:.6f} | P&L: ${pnl:.4f} ({pnl_percent:+.2f}%) | SL: ${stop_loss_price:.6f} | TP: ${take_profit_price:.6f}")
+                logger.info(f"📊 {symbol} | Current: {format_price(current_price)} | P&L: ${pnl:.4f} ({pnl_percent:+.2f}%) | SL: {format_price(stop_loss_price)} | TP: {format_price(take_profit_price)}")
 
                 # CRITICAL: Check stop-loss FIRST (risk protection is priority)
                 # Now uses trailing stop if applicable
                 if current_price <= stop_loss_price:
                     logger.warning(f"🚨🔴 STOP-LOSS TRIGGERED! 🔴🚨")
                     logger.warning(f"Symbol: {symbol}")
-                    logger.warning(f"Entry: ${entry_price:.6f}")
-                    logger.warning(f"Current: ${current_price:.6f}")
+                    logger.warning(f"Entry: {format_price(entry_price)}")
+                    logger.warning(f"Current: {format_price(current_price)}")
                     logger.warning(f"Loss: ${pnl:.4f} ({pnl_percent:.2f}%)")
                     logger.warning(f"Stop-Loss Level: {self.stop_loss_percent}%")
                     logger.warning(f"EXECUTING EMERGENCY SELL ORDER...")
@@ -1385,8 +1422,8 @@ class TradingEngine:
                 elif pnl_percent >= self.take_profit_percent:
                     logger.info(f"🎉🟢 TAKE-PROFIT TRIGGERED! 🟢🎉")
                     logger.info(f"Symbol: {symbol}")
-                    logger.info(f"Entry: ${entry_price:.6f}")
-                    logger.info(f"Current: ${current_price:.6f}")
+                    logger.info(f"Entry: {format_price(entry_price)}")
+                    logger.info(f"Current: {format_price(current_price)}")
                     logger.info(f"Profit: ${pnl:.4f} ({pnl_percent:.2f}%)")
                     logger.info(f"Take-Profit Level: {self.take_profit_percent}%")
                     logger.info(f"EXECUTING PROFIT-TAKING SELL ORDER...")
