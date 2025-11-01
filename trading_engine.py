@@ -479,7 +479,14 @@ class TradingEngine:
                 closes = [c[4] for c in candles_data]
                 technical_indicators = self._get_technical_indicators(closes, current_price)
 
-                # Get AI signal using asyncio
+                # PHASE 3: Calculate portfolio and volatility context for AI
+                logger.debug("📊 Calculating portfolio context for AI...")
+                portfolio_context = self._calculate_portfolio_context()
+
+                logger.debug("📈 Calculating volatility metrics for AI...")
+                volatility_metrics = self._calculate_volatility_metrics(symbol, closes)
+
+                # Get AI signal using asyncio WITH FULL CONTEXT
                 logger.debug("Creating asyncio event loop for AI analysis...")
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -488,7 +495,9 @@ class TradingEngine:
                         symbol=symbol,
                         current_price=current_price,
                         candles=candles,
-                        technical_indicators=technical_indicators
+                        technical_indicators=technical_indicators,
+                        portfolio_context=portfolio_context,
+                        volatility_metrics=volatility_metrics
                     )
                 )
                 loop.close()
@@ -497,9 +506,17 @@ class TradingEngine:
                 ai_confidence = ai_result['confidence']
                 ai_reasoning = ai_result['reasoning']
 
+                # Extract AI's autonomous trading parameters
+                ai_parameters = ai_result.get('parameters', {})
+                position_size_percent = ai_parameters.get('position_size_percent', 10)
+                stop_loss_percent = ai_parameters.get('stop_loss_percent', 2.0)
+                take_profit_percent = ai_parameters.get('take_profit_percent', 3.5)
+                risk_reward_ratio = ai_parameters.get('risk_reward_ratio', 1.75)
+
                 logger.success(f"✅ DeepSeek AI Analysis Complete!")
                 logger.info(f"🤖 AI Decision: {ai_signal} (confidence: {ai_confidence*100:.1f}%)")
                 logger.info(f"💭 AI Reasoning: {ai_reasoning}")
+                logger.info(f"🎯 AI Parameters: Position={position_size_percent:.1f}%, SL={stop_loss_percent:.2f}%, TP={take_profit_percent:.2f}%, R:R={risk_reward_ratio:.2f}")
 
                 # Check if AI agrees with BUY
                 if ai_signal != 'BUY':
@@ -538,7 +555,17 @@ class TradingEngine:
             elif 'scalping' in strategies:
                 strategy_name = 'scalping'
 
-            self._execute_buy(symbol, investment, current_price, strategy_name)
+            # PHASE 3: Pass AI's dynamic parameters to execution
+            self._execute_buy(
+                symbol=symbol,
+                usd_amount=investment,
+                price=current_price,
+                strategy=strategy_name,
+                ai_position_size_percent=position_size_percent,
+                ai_stop_loss_percent=stop_loss_percent,
+                ai_take_profit_percent=take_profit_percent,
+                ai_risk_reward_ratio=risk_reward_ratio
+            )
 
     def _check_sell_signal(self, symbol, current_price, strategies):
         """Check if we should sell this position - WITH AI VALIDATION"""
@@ -1132,8 +1159,10 @@ class TradingEngine:
                 del self.macd_crossovers[symbol]
             return False
 
-    def _execute_buy(self, symbol, usd_amount, price, strategy='unknown'):
-        """Execute a BUY order on Kraken"""
+    def _execute_buy(self, symbol, usd_amount, price, strategy='unknown',
+                     ai_position_size_percent=None, ai_stop_loss_percent=None,
+                     ai_take_profit_percent=None, ai_risk_reward_ratio=None):
+        """Execute a BUY order on Kraken with AI-determined parameters"""
         try:
             # CRITICAL: Check minimum order value to prevent dust positions
             MIN_ORDER_VALUE = 1.0  # Kraken minimum is ~$1 USD
@@ -1148,10 +1177,14 @@ class TradingEngine:
 
             logger.info(f"Executing BUY: {quantity:.8f} {symbol} for ${usd_amount:.2f} (Strategy: {strategy})")
 
+            # Log AI autonomous parameters if provided
+            if ai_position_size_percent is not None:
+                logger.info(f"🤖 AI Autonomous Parameters: Position={ai_position_size_percent:.1f}%, SL={ai_stop_loss_percent:.2f}%, TP={ai_take_profit_percent:.2f}%, R:R={ai_risk_reward_ratio:.2f}")
+
             # Place market buy order
             order = self.exchange.create_market_buy_order(symbol, quantity)
 
-            # Track position with strategy and trailing stop data
+            # Track position with strategy, trailing stop data, AND AI parameters
             self.positions[symbol] = {
                 'entry_price': price,
                 'quantity': quantity,
@@ -1159,7 +1192,12 @@ class TradingEngine:
                 'entry_time': datetime.now().isoformat(),
                 'order_id': order.get('id'),
                 'strategy': strategy,
-                'highest_price': price  # For trailing stop
+                'highest_price': price,  # For trailing stop
+                # PHASE 3: Store AI's autonomous trading parameters
+                'ai_position_size_percent': ai_position_size_percent,
+                'ai_stop_loss_percent': ai_stop_loss_percent,
+                'ai_take_profit_percent': ai_take_profit_percent,
+                'ai_risk_reward_ratio': ai_risk_reward_ratio
             }
 
             # Log trade
@@ -1381,9 +1419,21 @@ class TradingEngine:
                 pnl = (current_price - entry_price) * quantity
                 pnl_percent = ((current_price - entry_price) / entry_price) * 100
 
+                # PHASE 3: Use AI-determined parameters if available, otherwise use defaults
+                ai_stop_loss = position.get('ai_stop_loss_percent')
+                ai_take_profit = position.get('ai_take_profit_percent')
+
+                # Use AI parameters if they exist, otherwise fall back to class defaults
+                stop_loss_percent = ai_stop_loss if ai_stop_loss is not None else self.stop_loss_percent
+                take_profit_percent = ai_take_profit if ai_take_profit is not None else self.take_profit_percent
+
+                # Log which parameters we're using
+                if ai_stop_loss is not None:
+                    logger.debug(f"🤖 {symbol} using AI parameters: SL={stop_loss_percent:.2f}%, TP={take_profit_percent:.2f}%")
+
                 # Calculate stop-loss and take-profit levels
-                stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
-                take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
+                stop_loss_price = entry_price * (1 - stop_loss_percent / 100)
+                take_profit_price = entry_price * (1 + take_profit_percent / 100)
 
                 # TRAILING STOP LOGIC (for MACD+Supertrend strategy)
                 strategy = position.get('strategy', 'unknown')
@@ -1414,28 +1464,28 @@ class TradingEngine:
                 logger.info(f"📊 {symbol} | Current: {format_price(current_price)} | P&L: ${pnl:.4f} ({pnl_percent:+.2f}%) | SL: {format_price(stop_loss_price)} | TP: {format_price(take_profit_price)}")
 
                 # CRITICAL: Check stop-loss FIRST (risk protection is priority)
-                # Now uses trailing stop if applicable
+                # Now uses trailing stop if applicable AND AI-determined stop-loss levels
                 if current_price <= stop_loss_price:
                     logger.warning(f"🚨🔴 STOP-LOSS TRIGGERED! 🔴🚨")
                     logger.warning(f"Symbol: {symbol}")
                     logger.warning(f"Entry: {format_price(entry_price)}")
                     logger.warning(f"Current: {format_price(current_price)}")
                     logger.warning(f"Loss: ${pnl:.4f} ({pnl_percent:.2f}%)")
-                    logger.warning(f"Stop-Loss Level: {self.stop_loss_percent}%")
+                    logger.warning(f"Stop-Loss Level: {stop_loss_percent:.2f}% {'(AI-set)' if ai_stop_loss is not None else '(default)'}")
                     logger.warning(f"EXECUTING EMERGENCY SELL ORDER...")
 
                     # Execute sell with high priority
                     self._execute_sell_with_retry(symbol, current_price, "STOP_LOSS_AUTO")
                     continue
 
-                # Check take-profit (lock in gains)
-                elif pnl_percent >= self.take_profit_percent:
+                # Check take-profit (lock in gains) with AI-determined levels
+                elif pnl_percent >= take_profit_percent:
                     logger.info(f"🎉🟢 TAKE-PROFIT TRIGGERED! 🟢🎉")
                     logger.info(f"Symbol: {symbol}")
                     logger.info(f"Entry: {format_price(entry_price)}")
                     logger.info(f"Current: {format_price(current_price)}")
                     logger.info(f"Profit: ${pnl:.4f} ({pnl_percent:.2f}%)")
-                    logger.info(f"Take-Profit Level: {self.take_profit_percent}%")
+                    logger.info(f"Take-Profit Level: {take_profit_percent:.2f}% {'(AI-set)' if ai_take_profit is not None else '(default)'}")
                     logger.info(f"EXECUTING PROFIT-TAKING SELL ORDER...")
 
                     # Execute sell to lock in profit
@@ -1444,7 +1494,7 @@ class TradingEngine:
 
                 else:
                     # Position is within acceptable range
-                    logger.debug(f"✅ {symbol} within range: {pnl_percent:+.2f}% (Target: {self.take_profit_percent}%, Stop: -{self.stop_loss_percent}%)")
+                    logger.debug(f"✅ {symbol} within range: {pnl_percent:+.2f}% (Target: {take_profit_percent:.2f}%, Stop: -{stop_loss_percent:.2f}%)")
 
             except Exception as e:
                 logger.error(f"❌ CRITICAL ERROR checking position for {symbol}: {e}", exc_info=True)
@@ -1531,6 +1581,149 @@ class TradingEngine:
                 'adx': 20,
                 'supertrend': 'NEUTRAL'
             }
+
+    # ============================================
+    # AI MASTER TRADER - Portfolio & Risk Context
+    # ============================================
+
+    def _calculate_portfolio_context(self):
+        """
+        Calculate current portfolio state for AI decision-making
+        Provides DeepSeek with full portfolio awareness
+        """
+        try:
+            # Count positions by strategy
+            strategy_breakdown = {}
+            total_exposure_usd = 0
+            position_list = []
+
+            for symbol, position in self.positions.items():
+                strategy = position.get('strategy', 'unknown')
+                strategy_breakdown[strategy] = strategy_breakdown.get(strategy, 0) + 1
+                position_list.append(symbol)
+
+                # Calculate current exposure
+                try:
+                    ticker = self.exchange.fetch_ticker(symbol)
+                    current_price = ticker['last']
+                    quantity = position['quantity']
+                    total_exposure_usd += quantity * current_price
+                except Exception as e:
+                    logger.debug(f"Could not fetch price for {symbol} in portfolio calc: {e}")
+
+            # Calculate today's P&L from trade history
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            daily_pnl = 0
+
+            for trade in self.trades_history:
+                exit_time = trade.get('exit_time', '')
+                if exit_time.startswith(today_str):
+                    daily_pnl += trade.get('pnl', 0)
+
+            # Get max positions from config
+            from trading_config import POSITION_RULES
+            max_positions = POSITION_RULES.get('max_total_positions', 10)
+
+            portfolio_context = {
+                'total_positions': len(self.positions),
+                'max_positions': max_positions,
+                'positions': position_list,
+                'daily_pnl': daily_pnl,
+                'total_exposure_usd': total_exposure_usd,
+                'strategy_breakdown': strategy_breakdown
+            }
+
+            logger.debug(f"📊 Portfolio Context: {len(self.positions)}/{max_positions} positions, ${total_exposure_usd:.2f} exposure, P&L: ${daily_pnl:.2f}")
+
+            return portfolio_context
+
+        except Exception as e:
+            logger.error(f"Error calculating portfolio context: {e}")
+            return {
+                'total_positions': 0,
+                'max_positions': 10,
+                'positions': [],
+                'daily_pnl': 0,
+                'total_exposure_usd': 0,
+                'strategy_breakdown': {}
+            }
+
+    def _calculate_volatility_metrics(self, symbol, closes):
+        """
+        Calculate volatility metrics for risk adjustment
+        Helps DeepSeek adapt position sizing and stops to market conditions
+        """
+        try:
+            if len(closes) < 15:
+                return {
+                    'atr': 0,
+                    'atr_percent': 0,
+                    'regime': 'UNKNOWN',
+                    'avg_daily_range': 0
+                }
+
+            # Calculate ATR (14-period)
+            atr = self._calculate_atr(closes, period=14)
+            current_price = closes[-1]
+            atr_percent = (atr / current_price) * 100 if current_price > 0 else 0
+
+            # Determine volatility regime
+            if atr_percent > 5.0:
+                regime = 'HIGH'
+            elif atr_percent < 2.0:
+                regime = 'LOW'
+            else:
+                regime = 'NORMAL'
+
+            # Calculate average daily range (last 20 periods)
+            daily_ranges = []
+            for i in range(1, min(21, len(closes))):
+                range_pct = abs((closes[-i] - closes[-i-1]) / closes[-i-1]) * 100 if closes[-i-1] > 0 else 0
+                daily_ranges.append(range_pct)
+
+            avg_daily_range = sum(daily_ranges) / len(daily_ranges) if daily_ranges else 0
+
+            volatility_metrics = {
+                'atr': atr,
+                'atr_percent': atr_percent,
+                'regime': regime,
+                'avg_daily_range': avg_daily_range
+            }
+
+            logger.debug(f"📈 Volatility: ATR {atr_percent:.2f}% ({regime}), Avg Range: {avg_daily_range:.2f}%")
+
+            return volatility_metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating volatility metrics: {e}")
+            return {
+                'atr': 0,
+                'atr_percent': 0,
+                'regime': 'UNKNOWN',
+                'avg_daily_range': 0
+            }
+
+    def _calculate_atr(self, closes, period=14):
+        """
+        Calculate Average True Range for volatility measurement
+        """
+        if len(closes) < period + 1:
+            return 0
+
+        try:
+            true_ranges = []
+            for i in range(1, min(period + 1, len(closes))):
+                high = max(closes[-i], closes[-i-1])
+                low = min(closes[-i], closes[-i-1])
+                true_range = high - low
+                true_ranges.append(true_range)
+
+            atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0
+            return atr
+
+        except Exception as e:
+            logger.error(f"Error calculating ATR: {e}")
+            return 0
 
     def test_risk_management(self):
         """
