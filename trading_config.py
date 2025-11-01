@@ -14,9 +14,9 @@ STRATEGY_CONFIGS = {
         'timeframe': '5m',           # 5-minute candles
         'check_interval': 60,         # Check every 1 minute
         'ai_validation_tf': '15m',    # AI validates on 15-minute context
-        'stop_loss_percent': 1.0,     # Tight stop: 1%
-        'take_profit_percent': 1.5,   # Quick target: 1.5%
-        'min_hold_minutes': 5,        # Hold at least 5 minutes
+        'stop_loss_percent': 0.8,     # Tighter stop: 0.8% (was 1.0%)
+        'take_profit_percent': 1.2,   # Lower target: 1.2% (was 1.5%) - catch more opportunities
+        'min_hold_minutes': 3,        # Reduced from 5 to 3 - faster exits
         'max_hold_minutes': 120,      # Exit after 2 hours if not hit targets
         'description': 'Quick scalps on 5-minute momentum - high frequency, small gains',
         'enabled': True
@@ -121,21 +121,24 @@ POSITION_RULES = {
     ],
 
     # Maximum positions per strategy type
+    # INCREASED to allow more concurrent opportunities
     'max_positions_per_strategy': {
-        'scalping': 2,          # Max 2 scalp positions
-        'momentum': 3,          # Max 3 momentum positions
-        'mean_reversion': 2,    # Max 2 mean reversion positions
+        'scalping': 4,          # Max 4 scalp positions (was 2)
+        'momentum': 4,          # Max 4 momentum positions (was 3)
+        'mean_reversion': 3,    # Max 3 mean reversion positions (was 2)
         'macd_supertrend': 3    # Max 3 swing positions
     },
 
     # Total maximum positions across all strategies
-    'max_total_positions': 6,
+    # INCREASED from 6 to 10 to capture more opportunities
+    'max_total_positions': 10,
 
     # Position sizing by strategy (% of available capital per trade)
+    # OPTIMIZED for more frequent, smaller trades
     'position_size_percent': {
-        'scalping': 8,          # 8% per scalp (smaller, more frequent)
-        'momentum': 12,         # 12% per momentum trade
-        'mean_reversion': 10,   # 10% per mean reversion
+        'scalping': 5,          # 5% per scalp (was 8%) - smaller for more frequency
+        'momentum': 10,         # 10% per momentum trade (was 12%)
+        'mean_reversion': 8,    # 8% per mean reversion (was 10%)
         'macd_supertrend': 15   # 15% per swing trade (fewer, larger)
     }
 }
