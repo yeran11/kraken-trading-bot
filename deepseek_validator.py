@@ -303,11 +303,39 @@ After your reasoning, provide your final recommendation in this JSON format:
             except json.JSONDecodeError:
                 # Try to extract JSON if wrapped in markdown or text
                 import re
-                json_match = re.search(r'\{[^}]+\}', answer_text)
-                if json_match:
-                    data = json.loads(json_match.group())
+
+                # Try extracting from markdown code block first
+                markdown_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', answer_text, re.DOTALL)
+                if markdown_match:
+                    try:
+                        data = json.loads(markdown_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
                 else:
-                    raise ValueError("No JSON found in response")
+                    # Try finding JSON object with balanced braces
+                    # Look for opening brace and find matching closing brace
+                    start_idx = answer_text.find('{')
+                    if start_idx != -1:
+                        brace_count = 0
+                        end_idx = start_idx
+                        for i in range(start_idx, len(answer_text)):
+                            if answer_text[i] == '{':
+                                brace_count += 1
+                            elif answer_text[i] == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end_idx = i + 1
+                                    break
+
+                        if end_idx > start_idx:
+                            try:
+                                data = json.loads(answer_text[start_idx:end_idx])
+                            except json.JSONDecodeError:
+                                raise ValueError(f"Found JSON-like structure but couldn't parse: {answer_text[start_idx:end_idx][:100]}")
+                        else:
+                            raise ValueError("Found opening brace but no matching closing brace")
+                    else:
+                        raise ValueError(f"No JSON found in response. Response preview: {answer_text[:200]}")
 
             action = data.get('action', 'HOLD').upper()
             confidence = float(data.get('confidence', 50))

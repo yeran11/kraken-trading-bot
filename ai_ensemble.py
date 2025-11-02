@@ -7,6 +7,8 @@ import asyncio
 from loguru import logger
 from datetime import datetime
 import numpy as np
+import json
+import os
 
 # Import all AI components
 from ai_service import AIService
@@ -29,19 +31,17 @@ class AIEnsemble:
         self.deepseek = DeepSeekValidator(api_key=deepseek_api_key)
         self.macro = MacroAnalyzer()
 
+        # Load configuration from ai_config.json
+        config = self._load_config()
+
         # Initialize weight optimizer (Tier 4: Self-improvement)
         from weight_optimizer import EnsembleWeightOptimizer
-        initial_weights = {
-            'sentiment': 0.20,      # News/social sentiment
-            'technical': 0.35,      # Traditional indicators
-            'macro': 0.15,          # Economic conditions
-            'deepseek': 0.30        # LLM validation
-        }
+        initial_weights = config['weights']
         self.weight_optimizer = EnsembleWeightOptimizer(initial_weights)
         self.weights = self.weight_optimizer.get_current_weights()
 
-        # Minimum confidence threshold for trading
-        self.min_confidence = 0.55  # FIXED: 55% minimum (was 65%)
+        # Minimum confidence threshold for trading - LOAD FROM CONFIG
+        self.min_confidence = config['settings']['min_confidence']
 
         # Cache for recent analyses
         self.analysis_cache = {}
@@ -52,6 +52,48 @@ class AIEnsemble:
         self.trade_count = 0
 
         logger.success("✓ AI Ensemble initialized with 4-model architecture + weight optimization")
+        logger.info(f"📊 Loaded weights from config: {self._format_weights()}")
+        logger.info(f"🎯 Min confidence threshold: {self.min_confidence:.0%}")
+
+    def _load_config(self):
+        """Load AI configuration from ai_config.json"""
+        config_file = 'ai_config.json'
+
+        # Default fallback configuration
+        default_config = {
+            'weights': {
+                'sentiment': 0.15,
+                'technical': 0.25,
+                'macro': 0.10,
+                'deepseek': 0.50
+            },
+            'settings': {
+                'min_confidence': 0.50,
+                'enable_sentiment': True,
+                'enable_technical': True,
+                'enable_macro': True,
+                'enable_deepseek': True,
+                'enable_ensemble': True
+            }
+        }
+
+        # Try to load from file
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                logger.success(f"✅ Loaded AI configuration from {config_file}")
+                return config
+            except Exception as e:
+                logger.warning(f"Failed to load {config_file}: {e}, using defaults")
+                return default_config
+        else:
+            logger.warning(f"{config_file} not found, using default configuration")
+            return default_config
+
+    def _format_weights(self):
+        """Format weights for logging"""
+        return ", ".join([f"{model}: {weight:.0%}" for model, weight in self.weights.items()])
 
     async def generate_signal(
         self,
