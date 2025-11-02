@@ -43,16 +43,17 @@ class AIService:
     def _initialize_models(self):
         """Initialize ML models"""
         try:
-            # Try to load HuggingFace sentiment model
+            # Try to load FinBERT - Financial sentiment model (best for crypto/stocks)
             from transformers import pipeline
-            logger.info("Loading HuggingFace sentiment model...")
+            logger.info("Loading FinBERT financial sentiment model...")
             self.sentiment_analyzer = pipeline(
                 "sentiment-analysis",
-                model="cardiffnlp/twitter-roberta-base-sentiment-latest"
+                model="ProsusAI/finbert",
+                device=-1  # Use CPU, set to 0 for GPU
             )
-            logger.success("✓ Sentiment analyzer loaded")
+            logger.success("✓ FinBERT sentiment analyzer loaded (finance-specific)")
         except Exception as e:
-            logger.warning(f"Could not load sentiment analyzer: {e}")
+            logger.warning(f"Could not load FinBERT sentiment analyzer: {e}")
             logger.info("Will use fallback sentiment analysis")
 
         # Initialize price predictor

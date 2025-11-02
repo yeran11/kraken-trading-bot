@@ -29,22 +29,29 @@ class AIEnsemble:
         self.deepseek = DeepSeekValidator(api_key=deepseek_api_key)
         self.macro = MacroAnalyzer()
 
-        # Model weights (adjustable for optimization)
-        self.weights = {
+        # Initialize weight optimizer (Tier 4: Self-improvement)
+        from weight_optimizer import EnsembleWeightOptimizer
+        initial_weights = {
             'sentiment': 0.20,      # News/social sentiment
             'technical': 0.35,      # Traditional indicators
             'macro': 0.15,          # Economic conditions
             'deepseek': 0.30        # LLM validation
         }
+        self.weight_optimizer = EnsembleWeightOptimizer(initial_weights)
+        self.weights = self.weight_optimizer.get_current_weights()
 
         # Minimum confidence threshold for trading
-        self.min_confidence = 0.65  # 65% minimum to trade
+        self.min_confidence = 0.55  # FIXED: 55% minimum (was 65%)
 
         # Cache for recent analyses
         self.analysis_cache = {}
         self.cache_ttl = 60  # 1 minute
 
-        logger.success("✓ AI Ensemble initialized with 4-model architecture")
+        # Track individual predictions for weight optimization
+        self.last_predictions = {}
+        self.trade_count = 0
+
+        logger.success("✓ AI Ensemble initialized with 4-model architecture + weight optimization")
 
     async def generate_signal(
         self,
@@ -300,6 +307,14 @@ class AIEnsemble:
             final_signal = 'HOLD'
             final_confidence = hold_score
 
+        # Store individual predictions for weight optimization (Tier 4)
+        self.last_predictions = {
+            'sentiment': sentiment['signal'],
+            'technical': technical['signal'],
+            'macro': macro['signal'],
+            'deepseek': deepseek['signal']
+        }
+
         # Generate reasoning
         reasoning = self._generate_reasoning(sentiment, technical, macro, deepseek, final_signal)
 
@@ -440,3 +455,27 @@ class AIEnsemble:
             self.weights[model] /= total
 
         logger.success(f"✓ Weights adjusted: {self.weights}")
+
+    def record_trade_outcome(self, outcome: str):
+        """
+        Record trade outcome for ensemble weight optimization (Tier 4).
+
+        Args:
+            outcome: 'WIN' or 'LOSS'
+        """
+        if hasattr(self, 'last_predictions') and self.last_predictions:
+            self.weight_optimizer.record_prediction(self.last_predictions, outcome)
+            logger.debug(f"Recorded outcome: {outcome} for predictions: {self.last_predictions}")
+
+        self.trade_count += 1
+
+        # Check if it's time to optimize weights (every 100 trades)
+        if self.weight_optimizer.should_optimize(optimization_interval=100):
+            logger.info(f"🔄 Optimizing ensemble weights after {self.trade_count} trades...")
+            new_weights = self.weight_optimizer.optimize_weights()
+            self.weights = new_weights
+            logger.success(f"✅ Weights optimized: {self.weights}")
+
+    def get_performance_summary(self):
+        """Get current ensemble performance stats."""
+        return self.weight_optimizer.get_performance_summary()
