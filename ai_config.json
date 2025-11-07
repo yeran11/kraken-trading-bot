@@ -1,16 +1,16 @@
 {
   "weights": {
-    "sentiment": 0.15,
-    "technical": 0.25,
-    "macro": 0.1,
-    "deepseek": 0.5
+    "sentiment": 0.10,
+    "technical": 0.15,
+    "macro": 0.10,
+    "deepseek": 0.65
   },
   "settings": {
-    "min_confidence": 0.5,
+    "min_confidence": 0.45,
     "enable_sentiment": true,
-    "enable_technical": false,
-    "enable_macro": false,
+    "enable_technical": true,
+    "enable_macro": true,
     "enable_deepseek": true,
-    "enable_ensemble": false
+    "enable_ensemble": true
   }
 }

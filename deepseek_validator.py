@@ -306,10 +306,10 @@ After your reasoning, provide your final recommendation in this JSON format:
    - **If you can justify 50%+, RECOMMEND BUY**
 
 6. **ENSEMBLE AWARENESS** 🤖
-   - Your vote carries 50% weight in final decision
-   - Technical has 25%, Sentiment 15%, Macro 10%
-   - **Even at 60% confidence, you influence ensemble heavily**
-   - Don't be conservative - YOUR VOTE MATTERS MOST
+   - Your vote carries 65% weight in final decision (DOMINANT INSTITUTIONAL TRADER)
+   - Technical has 15%, Sentiment 10%, Macro 10%
+   - **Even at 60% confidence, you nearly control the entire decision**
+   - Don't be conservative - YOU ARE THE MASTER TRADER
 
 7. **REAL-WORLD PROFIT MATH** 📊
    - Small win: +1.5% × $10 position = +$0.15 profit
