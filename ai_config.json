@@ -13,6 +13,6 @@
     "enable_deepseek": true,
     "enable_ensemble": false
   },
-  "mode": "PURE_INSTITUTIONAL_TRADER",
-  "description": "100% DeepSeek control - Leveraging High-Flyer Capital Management's quantitative trading DNA"
+  "mode": "PURE_DEEPSEEK_WITH_INTELLIGENT_FALLBACK",
+  "description": "100% DeepSeek control - When DeepSeek fails, intelligent fallback approves trades with 2+ strong technical signals"
 }

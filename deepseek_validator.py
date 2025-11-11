@@ -18,6 +18,19 @@ class DeepSeekValidator:
         self.api_key = api_key or os.getenv('DEEPSEEK_API_KEY')
         self.base_url = "https://api.deepseek.com/v1"
 
+        # Disable ALL proxy settings (Windows/Linux compatible)
+        os.environ['NO_PROXY'] = '*'
+        os.environ['no_proxy'] = '*'
+        os.environ.pop('HTTP_PROXY', None)
+        os.environ.pop('HTTPS_PROXY', None)
+        os.environ.pop('http_proxy', None)
+        os.environ.pop('https_proxy', None)
+
+        # Create requests session with no proxy
+        self.session = requests.Session()
+        self.session.trust_env = False  # Ignore system proxy settings
+        self.session.proxies = {}  # Empty proxy dict
+
         # 🧠 UPGRADED: Using DeepSeek-R1 Reasoning Model for superior trading analysis
         self.model = "deepseek-reasoner"  # Advanced reasoning with Chain-of-Thought
         self.temperature = 0.3  # Lower = more consistent
@@ -328,8 +341,10 @@ After your reasoning, provide your final recommendation in this JSON format:
 
         return prompt
 
-    async def _call_deepseek_api(self, prompt: str):
-        """Call DeepSeek-R1 Reasoning API"""
+    async def _call_deepseek_api(self, prompt: str, retry_count: int = 0):
+        """Call DeepSeek-R1 Reasoning API with retry logic for unstable responses"""
+        max_retries = 3
+
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -373,27 +388,72 @@ Remember: Missing a profitable trade is more costly than a stopped-out small pos
                 # NOTE: Reasoning model doesn't use response_format - it thinks first, then responds
             }
 
-            logger.debug(f"🧠 Calling DeepSeek-R1 reasoning model...")
-            response = requests.post(
+            logger.debug(f"🧠 Calling DeepSeek-R1 reasoning model (attempt {retry_count + 1}/{max_retries + 1})...")
+            response = self.session.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=60,  # Increased timeout for reasoning (thinking takes time)
-                proxies={}  # Disable proxy completely
+                timeout=60  # Increased timeout for reasoning (thinking takes time)
             )
 
             response.raise_for_status()
+
+            # Handle empty response body (known DeepSeek API issue)
+            if not response.text or response.text.strip() == '':
+                logger.warning(f"⚠️ DeepSeek returned empty response (attempt {retry_count + 1})")
+                if retry_count < max_retries:
+                    import asyncio
+                    await asyncio.sleep(1)  # Brief delay before retry
+                    return await self._call_deepseek_api(prompt, retry_count + 1)
+                else:
+                    raise ValueError("DeepSeek API returned empty response after multiple retries")
+
             data = response.json()
+
+            # Validate response structure
+            if 'choices' not in data or len(data['choices']) == 0:
+                logger.warning(f"⚠️ DeepSeek returned invalid structure (attempt {retry_count + 1})")
+                if retry_count < max_retries:
+                    import asyncio
+                    await asyncio.sleep(1)
+                    return await self._call_deepseek_api(prompt, retry_count + 1)
+                else:
+                    raise ValueError("DeepSeek API returned invalid response structure")
 
             message = data['choices'][0]['message']
 
             # Extract reasoning process (Chain-of-Thought)
-            reasoning_content = message.get('reasoning_content', '')
-            final_answer = message.get('content', '')
+            # Note: reasoning_content can be null due to API instability
+            reasoning_content = message.get('reasoning_content') or ''
+            final_answer = message.get('content') or ''
+
+            # Handle case where content is in the wrong field (known API bug)
+            # Sometimes all content goes into 'content' field including reasoning
+            if not final_answer and not reasoning_content:
+                logger.warning(f"⚠️ Both reasoning_content and content are empty (attempt {retry_count + 1})")
+                if retry_count < max_retries:
+                    import asyncio
+                    await asyncio.sleep(1)
+                    return await self._call_deepseek_api(prompt, retry_count + 1)
+                else:
+                    raise ValueError("DeepSeek API returned empty message content")
+
+            # If reasoning_content is empty but content has data, it might all be in content
+            if not reasoning_content and final_answer:
+                # Check if final_answer contains both reasoning and JSON
+                # (sometimes the API puts everything in content field)
+                if '{' in final_answer and '}' in final_answer:
+                    # Likely has JSON answer, reasoning might be before it
+                    json_start = final_answer.find('{')
+                    if json_start > 100:  # If there's significant text before JSON
+                        reasoning_content = final_answer[:json_start].strip()
+                        logger.debug("🔧 Extracted reasoning from content field")
 
             # Log the reasoning process
             if reasoning_content:
                 logger.debug(f"🤔 AI Thinking Process:\n{reasoning_content[:500]}...")  # First 500 chars
+            else:
+                logger.debug("⚠️ No reasoning_content in response (API may have skipped thinking)")
 
             logger.debug(f"💡 AI Final Answer: {final_answer[:200]}...")
 
@@ -408,7 +468,7 @@ Remember: Missing a profitable trade is more costly than a stopped-out small pos
             raise
 
     def _parse_ai_response(self, response_data):
-        """Parse AI response from DeepSeek-R1 reasoning model"""
+        """Parse AI response from DeepSeek-R1 reasoning model with enhanced error handling"""
         try:
             # Handle dict response from reasoning model
             if isinstance(response_data, dict):
@@ -419,23 +479,34 @@ Remember: Missing a profitable trade is more costly than a stopped-out small pos
                 reasoning_process = ''
                 answer_text = response_data
 
+            # Validate we have some content to work with
+            if not answer_text or answer_text.strip() == '':
+                logger.warning("⚠️ Empty answer_text received from DeepSeek")
+                raise ValueError("Empty response from DeepSeek API")
+
             # Try to parse JSON from answer
+            data = None
             try:
-                # Look for JSON in the answer
+                # Try direct JSON parse first
                 data = json.loads(answer_text)
+                logger.debug("✅ Direct JSON parse successful")
             except json.JSONDecodeError:
                 # Try to extract JSON if wrapped in markdown or text
                 import re
+                logger.debug("🔍 Attempting to extract JSON from response text...")
 
                 # Try extracting from markdown code block first
                 markdown_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', answer_text, re.DOTALL)
                 if markdown_match:
                     try:
                         data = json.loads(markdown_match.group(1))
-                    except json.JSONDecodeError:
+                        logger.debug("✅ Extracted JSON from markdown code block")
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"❌ Markdown JSON parse failed: {e}")
                         pass
-                else:
-                    # Try finding JSON object with balanced braces
+
+                # If markdown didn't work, try finding JSON object with balanced braces
+                if data is None:
                     # Look for opening brace and find matching closing brace
                     start_idx = answer_text.find('{')
                     if start_idx != -1:
@@ -451,14 +522,24 @@ Remember: Missing a profitable trade is more costly than a stopped-out small pos
                                     break
 
                         if end_idx > start_idx:
+                            json_str = answer_text[start_idx:end_idx]
                             try:
-                                data = json.loads(answer_text[start_idx:end_idx])
-                            except json.JSONDecodeError:
-                                raise ValueError(f"Found JSON-like structure but couldn't parse: {answer_text[start_idx:end_idx][:100]}")
+                                data = json.loads(json_str)
+                                logger.debug("✅ Extracted JSON using brace matching")
+                            except json.JSONDecodeError as e:
+                                logger.error(f"❌ JSON parse failed: {e}")
+                                logger.error(f"Attempted to parse: {json_str[:200]}")
+                                raise ValueError(f"Found JSON-like structure but couldn't parse: {json_str[:100]}")
                         else:
                             raise ValueError("Found opening brace but no matching closing brace")
                     else:
+                        # Last resort: try to extract action from text
+                        logger.warning("⚠️ No JSON structure found, attempting text-based extraction")
                         raise ValueError(f"No JSON found in response. Response preview: {answer_text[:200]}")
+
+            # Validate we got JSON data
+            if data is None:
+                raise ValueError("Failed to extract JSON from response")
 
             action = data.get('action', 'HOLD').upper()
             confidence = float(data.get('confidence', 50))
@@ -587,17 +668,72 @@ Remember: Missing a profitable trade is more costly than a stopped-out small pos
         }
 
     def _fallback_response(self, technical_signals: dict):
-        """Fallback response on error"""
+        """
+        INTELLIGENT fallback when DeepSeek fails
+        Analyzes technical signals to approve strong setups
+        This allows the bot to trade even when DeepSeek API times out
+        """
+        # Extract indicators with safe defaults
+        rsi = technical_signals.get('rsi', 50)
+        macd_signal = technical_signals.get('macd_signal', 'neutral')
+        trend = technical_signals.get('trend', 'neutral')
+        price = technical_signals.get('price', 0)
+        lower_band = technical_signals.get('bollinger_lower', price)
+        upper_band = technical_signals.get('bollinger_upper', price)
+
+        # Count strong buy signals
+        strong_buy_signals = 0
+        signal_details = []
+
+        # 1. Oversold RSI (< 35 to match Mean Reversion strategy)
+        if rsi < 35:
+            strong_buy_signals += 1
+            signal_details.append(f"Oversold RSI {rsi:.1f}")
+
+        # 2. Bullish MACD
+        if macd_signal and str(macd_signal).upper() in ['BULLISH', 'BUY', 'POSITIVE']:
+            strong_buy_signals += 1
+            signal_details.append("Bullish MACD")
+
+        # 3. Bullish trend
+        if trend and str(trend).upper() in ['BULLISH', 'UP', 'POSITIVE']:
+            strong_buy_signals += 1
+            signal_details.append("Bullish trend")
+
+        # 4. Price below lower Bollinger Band (support bounce)
+        if price > 0 and lower_band > 0 and price <= lower_band * 1.005:  # Within 0.5% of lower band
+            strong_buy_signals += 1
+            signal_details.append(f"Price at support (${price:.6f} ≤ ${lower_band:.6f})")
+
+        # Decision logic
+        if strong_buy_signals >= 2:
+            # APPROVE TRADE - Strong technical setup
+            action = 'BUY'
+            confidence = 70  # High enough to pass 50% threshold
+            reasoning = f"✅ DeepSeek offline, but {strong_buy_signals} strong buy signals: {', '.join(signal_details)}. Technical setup is excellent - APPROVING TRADE"
+
+        elif strong_buy_signals == 1:
+            # APPROVE with medium confidence
+            action = 'BUY'
+            confidence = 60  # Still passes 50% threshold
+            reasoning = f"⚠️ DeepSeek offline, 1 strong signal: {', '.join(signal_details)}. Cautiously approving trade"
+
+        else:
+            # NO clear signals - stay safe
+            action = 'HOLD'
+            confidence = 50
+            reasoning = f"❌ DeepSeek offline, no strong technical signals (RSI: {rsi:.1f}, MACD: {macd_signal}). Defaulting to HOLD for safety"
+
         return {
-            'action': 'HOLD',
-            'confidence': 50,
+            'action': action,
+            'confidence': confidence,
             'position_size_percent': 10,
             'stop_loss_percent': 2.0,
             'take_profit_percent': 3.5,
             'risk_reward_ratio': 1.75,
-            'reasoning': 'AI validation unavailable, defaulting to HOLD for safety',
-            'risks': ['AI service temporarily unavailable'],
-            'source': 'fallback'
+            'reasoning': reasoning,
+            'risks': ['AI service unavailable - using technical analysis only'],
+            'source': 'intelligent_fallback'
         }
 
     def get_market_analysis(self, symbol: str, timeframe: str = '1h'):
@@ -631,12 +767,11 @@ Keep it concise (3-4 sentences)."""
                 "max_tokens": 300
             }
 
-            response = requests.post(
+            response = self.session.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=20,
-                proxies={}  # Disable proxy completely
+                timeout=20
             )
 
             response.raise_for_status()

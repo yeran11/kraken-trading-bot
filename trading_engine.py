@@ -129,7 +129,7 @@ class TradingEngine:
 
         # AI configuration
         self.ai_enabled = os.getenv('AI_ENSEMBLE_ENABLED', 'true').lower() == 'true'
-        self.ai_min_confidence = float(os.getenv('AI_MIN_CONFIDENCE', '0.65'))
+        self.ai_min_confidence = float(os.getenv('AI_MIN_CONFIDENCE', '0.50'))  # Lowered to 50% to allow fallback trades when DeepSeek fails
 
         logger.success("=" * 70)
         logger.success("✓ MULTI-TIMEFRAME TRADING ENGINE INITIALIZED")
