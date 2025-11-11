@@ -345,7 +345,8 @@ Respond in JSON format:
                 f"{self.validator.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=60,
+                proxies={}  # Disable proxy completely
             )
 
             response.raise_for_status()

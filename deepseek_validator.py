@@ -378,7 +378,8 @@ Remember: Missing a profitable trade is more costly than a stopped-out small pos
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=60  # Increased timeout for reasoning (thinking takes time)
+                timeout=60,  # Increased timeout for reasoning (thinking takes time)
+                proxies={}  # Disable proxy completely
             )
 
             response.raise_for_status()
@@ -634,7 +635,8 @@ Keep it concise (3-4 sentences)."""
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=20
+                timeout=20,
+                proxies={}  # Disable proxy completely
             )
 
             response.raise_for_status()
